@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
 	"go.opentelemetry.io/obi/pkg/config"
 	"go.opentelemetry.io/obi/pkg/internal/ebpf/ringbuf"
+	"go.opentelemetry.io/obi/pkg/internal/largebuf"
 )
 
 var (
@@ -50,7 +51,7 @@ func ReadTCPRequestIntoSpan(parseCtx *EBPFParseContext, cfg *config.EBPFTracer, 
 	// We might know already the protocol for this event
 	switch event.ProtocolType {
 	case ProtocolTypeKafka:
-		k, ignore, err := ProcessPossibleKafkaEvent(event, requestBuffer.NewReader(), responseBuffer.NewReader(), parseCtx.kafkaTopicUUIDToName)
+		k, ignore, err := ProcessPossibleKafkaEvent(event, requestBuffer, responseBuffer, parseCtx.kafkaTopicUUIDToName)
 		if ignore && err == nil {
 			return request.Span{}, true, nil // parsed kafka event, but we don't want to create a span for it
 		}
@@ -82,7 +83,8 @@ func ReadTCPRequestIntoSpan(parseCtx *EBPFParseContext, cfg *config.EBPFTracer, 
 
 		return span, false, nil
 	case ProtocolTypePostgres:
-		span, err := handlePostgres(parseCtx, event, requestBuffer.NewReader(), responseBuffer.NewReader())
+		reqR, respR := requestBuffer.NewReader(), responseBuffer.NewReader()
+		span, err := handlePostgres(parseCtx, event, &reqR, &respR)
 		if errors.Is(err, errFallback) {
 			slog.Debug("Postgres: falling back to generic handler")
 			break
@@ -179,7 +181,7 @@ func ReadTCPRequestIntoSpan(parseCtx *EBPFParseContext, cfg *config.EBPFTracer, 
 			return request.Span{}, true, nil // ignore for now, next event will be parsed
 		} else {
 			// we should not arrive here, leave it for completeness
-			k, ignore, err := ProcessPossibleKafkaEvent(event, requestBuffer.NewReader(), responseBuffer.NewReader(), parseCtx.kafkaTopicUUIDToName)
+			k, ignore, err := ProcessPossibleKafkaEvent(event, requestBuffer, responseBuffer, parseCtx.kafkaTopicUUIDToName)
 			if ignore && err == nil {
 				return request.Span{}, true, nil // parsed kafka event, but we don't want to create a span for it
 			}
@@ -197,18 +199,18 @@ func ReadTCPRequestIntoSpan(parseCtx *EBPFParseContext, cfg *config.EBPFTracer, 
 	return request.Span{}, true, nil // ignore if we couldn't parse it
 }
 
-func getBuffers(parseCtx *EBPFParseContext, event *TCPRequestInfo) (req *LargeBuffer, resp *LargeBuffer) {
+func getBuffers(parseCtx *EBPFParseContext, event *TCPRequestInfo) (req *largebuf.LargeBuffer, resp *largebuf.LargeBuffer) {
 	l := int(event.Len)
 	if l < 0 || len(event.Buf) < l {
 		l = len(event.Buf)
 	}
-	req = NewLargeBufferFrom(event.Buf[:l])
+	req = largebuf.NewLargeBufferFrom(event.Buf[:l])
 
 	l = int(event.RespLen)
 	if l < 0 || len(event.Rbuf) < l {
 		l = len(event.Rbuf)
 	}
-	resp = NewLargeBufferFrom(event.Rbuf[:l])
+	resp = largebuf.NewLargeBufferFrom(event.Rbuf[:l])
 
 	if event.HasLargeBuffers == 1 {
 		if b, ok := extractTCPLargeBuffer(parseCtx, event.Tp.TraceId, packetTypeRequest, directionByPacketType(packetTypeRequest, !event.IsServer), event.ConnInfo); ok {

@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.opentelemetry.io/obi/pkg/internal/largebuf"
 )
 
 func TestPostgresMessagesIterator(t *testing.T) {
@@ -82,7 +84,8 @@ func TestPostgresMessagesIterator(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got []postgresMessage
-			it := &postgresMessageIterator{r: NewLargeBufferFrom(tt.buf).NewReader()}
+			rr := largebuf.NewLargeBufferFrom(tt.buf).NewReader()
+			it := &postgresMessageIterator{r: &rr}
 			for {
 				msg := it.next()
 				if it.isEOF() {
@@ -112,11 +115,11 @@ func TestPostgresMessagesIteratorNoAllocs(t *testing.T) {
 		return b
 	}()
 
-	lb := NewLargeBufferFrom(buf)
+	lb := largebuf.NewLargeBufferFrom(buf)
 	r := lb.NewReader()
 	allocs := testing.AllocsPerRun(1000, func() {
 		r.Reset()
-		it := postgresMessageIterator{r: r}
+		it := postgresMessageIterator{r: &r}
 
 		for {
 			it.next()
