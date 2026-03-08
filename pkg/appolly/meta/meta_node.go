@@ -24,13 +24,6 @@ func nslog() *slog.Logger {
 	return slog.With("component", "meta.NodeMeta")
 }
 
-// TODO: make configurable
-const (
-	retryTimeout       = 30 * time.Second
-	retryStartInterval = 500 * time.Millisecond
-	retryMaxInterval   = 5 * time.Second
-)
-
 var connectionTimeout = 2 * time.Second
 
 // some attributes from the node need to be filtered out, becausee ither
@@ -73,8 +66,10 @@ func NewNodeMeta(
 	ctx context.Context,
 	overrideHost string,
 	kubeInformer *kube.MetadataProvider,
+	retryCfg RetryConfig,
 ) NodeMeta {
 	return fetchEntries(ctx,
+		retryCfg,
 		// some fetchers will only retrieve the host name while others
 		// will retrieve also host attributes that will be merged
 		// in order of the priority below (the later the highest)
@@ -91,6 +86,7 @@ func NewNodeMeta(
 
 func fetchEntries(
 	ctx context.Context,
+	retryCfg RetryConfig,
 	fetchers ...fetcher,
 ) NodeMeta {
 	log := nslog()
@@ -101,7 +97,7 @@ func fetchEntries(
 	results := make([]NodeMeta, len(fetchers))
 	for i, fetch := range fetchers {
 		wg.Go(func() {
-			results[i] = backoffFetch(ctx, fetch, log.With("fetcher", i))
+			results[i] = backoffFetch(ctx, retryCfg, fetch, log.With("fetcher", i))
 		})
 	}
 	wg.Wait()
@@ -120,8 +116,8 @@ func fetchEntries(
 	return merged
 }
 
-func backoffFetch(ctx context.Context, fetch fetcher, log *slog.Logger) NodeMeta {
-	backoff := retryStartInterval
+func backoffFetch(ctx context.Context, retryCfg RetryConfig, fetch fetcher, log *slog.Logger) NodeMeta {
+	backoff := retryCfg.StartInterval
 	start := time.Now()
 	for {
 		entries, err := fetch(ctx)
@@ -129,7 +125,7 @@ func backoffFetch(ctx context.Context, fetch fetcher, log *slog.Logger) NodeMeta
 			return entries
 		}
 		// exponential backoff retry strategy
-		if time.Since(start) > retryTimeout {
+		if time.Since(start) > retryCfg.Timeout {
 			log.Debug("timeout reached while looking for metadata. Giving up", "error", err)
 			return NodeMeta{}
 		}
@@ -141,7 +137,7 @@ func backoffFetch(ctx context.Context, fetch fetcher, log *slog.Logger) NodeMeta
 			log.Debug("context canceled. Exiting")
 			return NodeMeta{}
 		}
-		backoff = min(backoff*2, retryMaxInterval)
+		backoff = min(backoff*2, retryCfg.MaxInterval)
 	}
 }
 
