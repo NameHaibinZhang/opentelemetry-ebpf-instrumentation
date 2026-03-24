@@ -1,10 +1,12 @@
-module go.opentelemetry.io/obi/internal/test/oats/sql
+module go.opentelemetry.io/obi/internal/test/oats/harness
 
-go 1.25.8
+go 1.25.7
 
-require go.opentelemetry.io/obi/internal/test/oats/harness v0.0.0
-
-replace go.opentelemetry.io/obi/internal/test/oats/harness => ../harness
+require (
+	github.com/grafana/oats v0.6.1
+	github.com/onsi/ginkgo/v2 v2.28.1
+	github.com/onsi/gomega v1.39.1
+)
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
@@ -16,14 +18,11 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/grafana/oats v0.6.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.7 // indirect
 	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
-	github.com/onsi/ginkgo/v2 v2.28.1 // indirect
-	github.com/onsi/gomega v1.39.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/collector/featuregate v1.51.0 // indirect
 	go.opentelemetry.io/collector/pdata v1.51.0 // indirect
