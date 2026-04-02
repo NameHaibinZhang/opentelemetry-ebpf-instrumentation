@@ -50,6 +50,7 @@ func httpInfoToSpanLegacy(info *HTTPInfo) request.Span {
 		Type:           request.EventType(info.Type),
 		Method:         info.Method,
 		Path:           removeQuery(info.URL),
+		FullPath:       info.URL,
 		Peer:           info.Peer,
 		PeerPort:       int(info.ConnInfo.S_port),
 		Host:           info.Host,
@@ -106,11 +107,16 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 	if headerHost == "" && reqType == request.EventTypeHTTPClient {
 		headerHost, _ = httpHostFromBuf(event.Buf[:])
 	}
+	fullPath := req.URL.RequestURI()
+	if fullPath == "" {
+		fullPath = req.URL.String()
+	}
 
 	httpSpan := request.Span{
 		Type:           reqType,
 		Method:         req.Method,
 		Path:           removeQuery(req.URL.String()),
+		FullPath:       fullPath,
 		Peer:           peer,
 		PeerPort:       int(event.ConnInfo.S_port),
 		Host:           host,
