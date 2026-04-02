@@ -78,7 +78,7 @@ func TestHTTPRequestResponseToSpanSetsSchemeFromSSLFlag(t *testing.T) {
 }
 
 func TestHTTPRequestResponseToSpanSetsFullPath(t *testing.T) {
-	t.Run("RequestURI includes query", func(t *testing.T) {
+	t.Run("URL.String includes path and query", func(t *testing.T) {
 		req := &http.Request{
 			Method: http.MethodGet,
 			URL:    &url.URL{Path: "/test", RawQuery: "id=1"},
@@ -98,7 +98,7 @@ func TestHTTPRequestResponseToSpanSetsFullPath(t *testing.T) {
 		assert.Equal(t, "/test?id=1", span.FullPath)
 	})
 
-	t.Run("RequestURI empty falls back to URL.String", func(t *testing.T) {
+	t.Run("URL.String for scheme and host only", func(t *testing.T) {
 		req := &http.Request{
 			Method: http.MethodGet,
 			URL:    &url.URL{Scheme: "https", Host: "api.example.com"},

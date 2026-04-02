@@ -107,16 +107,13 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 	if headerHost == "" && reqType == request.EventTypeHTTPClient {
 		headerHost, _ = httpHostFromBuf(event.Buf[:])
 	}
-	fullPath := req.URL.RequestURI()
-	if fullPath == "" {
-		fullPath = req.URL.String()
-	}
 
+	// FullPath matches net/url.URL.String() (full URL or request-target), not RequestURI().
 	httpSpan := request.Span{
 		Type:           reqType,
 		Method:         req.Method,
 		Path:           removeQuery(req.URL.String()),
-		FullPath:       fullPath,
+		FullPath:       req.URL.String(),
 		Peer:           peer,
 		PeerPort:       int(event.ConnInfo.S_port),
 		Host:           host,
