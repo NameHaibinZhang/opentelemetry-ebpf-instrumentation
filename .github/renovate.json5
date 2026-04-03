@@ -23,24 +23,12 @@
       "/^\\.github\\/.*-requirements\\.txt$/"
     ]
   },
-  "allowedCommands": [
-    "make go-mod-tidy",
-    "make go-notices-update",
-    "make java-notices-update"
-  ],
   "packageRules": [
     {
       "groupName": "Go",
       "matchManagers": ["gomod"],
       "matchUpdateTypes": ["patch", "digest", "minor"],
-      "schedule": ["before 6am on Monday"],
-      "postUpgradeTasks": {
-        "commands": [
-          "make go-mod-tidy",
-          "make go-notices-update"
-        ],
-        "executionMode": "branch"
-      }
+      "schedule": ["before 6am on Monday"]
     },
     {
       "description": "Block Go language major upgrades in go.mod files (these require coordinated manual changes)",
@@ -72,13 +60,7 @@
       "groupName": "Java",
       "matchManagers": ["gradle", "maven"],
       "matchUpdateTypes": ["patch", "digest", "minor", "major"],
-      "schedule": ["before 6am on Thursday"],
-      "postUpgradeTasks": {
-        "commands": [
-          "make java-notices-update"
-        ],
-        "executionMode": "branch"
-      }
+      "schedule": ["before 6am on Thursday"]
     },
     {
       "groupName": "NPM",
