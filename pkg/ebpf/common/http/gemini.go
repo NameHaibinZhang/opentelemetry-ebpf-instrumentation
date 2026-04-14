@@ -14,12 +14,45 @@ import (
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
 )
 
-func isGemini(respHeader http.Header) bool {
-	return respHeader.Get("X-Gemini-Service-Tier") != ""
+// geminiHosts lists known hostnames used by the Gemini API and Vertex AI.
+var geminiHosts = []string{
+	"generativelanguage.googleapis.com",
+	"aiplatform.googleapis.com",
+}
+
+func isGemini(req *http.Request, respHeader http.Header) bool {
+	if respHeader.Get("X-Gemini-Service-Tier") != "" {
+		return true
+	}
+
+	return isGeminiURL(req)
+}
+
+// isGeminiURL checks whether the request targets a known Gemini endpoint
+// by inspecting the host and URL path. This covers the googleapis/go-genai
+// library which calls both the Gemini Developer API and Vertex AI backends.
+func isGeminiURL(req *http.Request) bool {
+	if req == nil || req.URL == nil {
+		return false
+	}
+
+	host := req.URL.Host
+	if host == "" {
+		host = req.Host
+	}
+
+	for _, h := range geminiHosts {
+		if host == h || strings.HasSuffix(host, "."+h) ||
+			strings.HasSuffix(host, "-"+h) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func GeminiSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
-	if !isGemini(resp.Header) {
+	if !isGemini(req, resp.Header) {
 		return *baseSpan, false
 	}
 
@@ -47,13 +80,15 @@ func GeminiSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 	}
 
 	model := extractGeminiModel(req)
+	operation := extractGeminiOperation(req)
 
 	baseSpan.SubType = request.HTTPSubtypeGemini
 	baseSpan.GenAI = &request.GenAI{
 		Gemini: &request.VendorGemini{
-			Input:  parsedRequest,
-			Output: parsedResponse,
-			Model:  model,
+			Input:     parsedRequest,
+			Output:    parsedResponse,
+			Model:     model,
+			Operation: operation,
 		},
 	}
 
@@ -61,7 +96,9 @@ func GeminiSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 }
 
 // extractGeminiModel extracts the model name from the URL path.
-// Gemini URLs follow the pattern: /v1beta/models/{model}:generateContent
+// Supported patterns:
+//   - Gemini API:  /v1beta/models/{model}:generateContent
+//   - Vertex AI:   /v1/projects/{p}/locations/{l}/publishers/google/models/{model}:generateContent
 func extractGeminiModel(req *http.Request) string {
 	if req == nil || req.URL == nil {
 		return ""
@@ -77,4 +114,41 @@ func extractGeminiModel(req *http.Request) string {
 		model = model[:colonIdx]
 	}
 	return model
+}
+
+// extractGeminiOperation extracts the operation name from the URL path.
+// The operation appears after the colon in the model segment, e.g.
+// /models/gemini-2.0-flash:generateContent → generate_content.
+func extractGeminiOperation(req *http.Request) string {
+	if req == nil || req.URL == nil {
+		return "generate_content"
+	}
+	path := req.URL.Path
+	const prefix = "/models/"
+	idx := strings.Index(path, prefix)
+	if idx < 0 {
+		return "generate_content"
+	}
+	after := path[idx+len(prefix):]
+	colonIdx := strings.Index(after, ":")
+	if colonIdx < 0 {
+		return "generate_content"
+	}
+	return camelToSnake(after[colonIdx+1:])
+}
+
+// camelToSnake converts a camelCase string to snake_case.
+func camelToSnake(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r + ('a' - 'A'))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

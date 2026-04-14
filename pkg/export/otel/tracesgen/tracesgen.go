@@ -535,7 +535,7 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 		if span.SubType == request.HTTPSubtypeGemini && span.GenAI != nil && span.GenAI.Gemini != nil {
 			ai := span.GenAI.Gemini
 			attrs = append(attrs, semconv.GenAIProviderNameGCPGemini)
-			attrs = append(attrs, semconv.GenAIOperationNameGenerateContent)
+			attrs = append(attrs, semconv.GenAIOperationNameKey.String(ai.OperationName()))
 			if ai.Output.ResponseID != "" {
 				attrs = append(attrs, semconv.GenAIResponseID(ai.Output.ResponseID))
 			}

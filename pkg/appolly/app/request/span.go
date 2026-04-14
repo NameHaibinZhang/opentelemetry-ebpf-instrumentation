@@ -381,9 +381,10 @@ type AnthropicError struct {
 // Google AI Studio (Gemini) types
 
 type VendorGemini struct {
-	Input  GeminiRequest
-	Output GeminiResponse
-	Model  string
+	Input     GeminiRequest
+	Output    GeminiResponse
+	Model     string
+	Operation string
 }
 
 type GeminiRequest struct {
@@ -444,6 +445,15 @@ func (g *VendorGemini) GetFinishReasons() []string {
 		}
 	}
 	return reasons
+}
+
+// OperationName returns the Gemini API operation name.
+// It falls back to "generate_content" when no operation was extracted from the URL.
+func (g *VendorGemini) OperationName() string {
+	if g.Operation != "" {
+		return g.Operation
+	}
+	return "generate_content"
 }
 
 func (g *VendorGemini) GetOutput() string {
@@ -1070,11 +1080,12 @@ func (s *Span) TraceName() string {
 		}
 
 		if s.Type == EventTypeHTTPClient && s.SubType == HTTPSubtypeGemini && s.GenAI != nil && s.GenAI.Gemini != nil {
+			op := s.GenAI.Gemini.OperationName()
 			model := s.GenAI.Gemini.Model
 			if model != "" {
-				return "generate_content " + model
+				return op + " " + model
 			}
-			return "generate_content"
+			return op
 		}
 
 		name := s.Method
@@ -1340,7 +1351,7 @@ func (s *Span) GenAIOperationName() string {
 		return s.GenAI.Anthropic.Output.Type
 	}
 	if s.GenAI.Gemini != nil {
-		return "generate_content"
+		return s.GenAI.Gemini.OperationName()
 	}
 	return ""
 }
