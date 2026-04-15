@@ -86,31 +86,12 @@ __check_defined = \
 ### Development Tools #######################################################
 
 # Tools module where tool versions are defined.
-TOOLS_MOD_DIR := ./internal/tools
 TOOLS_MODFILE := -modfile=$(CURDIR)/internal/tools/go.mod
 
-# Tools directory for built tool binaries.
-TOOLS = $(CURDIR)/.tools
-
-$(TOOLS):
-	@mkdir -p $@
-$(TOOLS)/%: $(TOOLS_MOD_DIR)/go.mod | $(TOOLS)
-	cd $(TOOLS_MOD_DIR) && \
-	go build -o $@ $(PACKAGE)
-
-BPF2GO ?= $(TOOLS)/bpf2go
-$(TOOLS)/bpf2go: PACKAGE=github.com/cilium/ebpf/cmd/bpf2go
+BPF2GO ?= go tool $(TOOLS_MODFILE) bpf2go
 
 # Required for k8s-cache unit tests
 ENVTEST_K8S_VERSION ?= 1.30.0
-ENVTEST ?= $(TOOLS)/setup-envtest
-$(TOOLS)/setup-envtest: PACKAGE=sigs.k8s.io/controller-runtime/tools/setup-envtest
-
-KIND ?= $(TOOLS)/kind
-$(TOOLS)/kind: PACKAGE=sigs.k8s.io/kind
-
-.PHONY: tools
-tools: $(BPF2GO) $(ENVTEST) $(KIND)
 
 ### Development Tools (end) #################################################
 
@@ -237,10 +218,10 @@ BPF_GEN_ALL := $(if $(BPF_GEN_GO),$(BPF_GEN_GO) $(BPF_GEN_OBJ))
 generate: export BPF_CLANG := $(CLANG)
 generate: export BPF_CFLAGS := $(CFLAGS)
 generate: export BPF2GO := $(BPF2GO)
-generate: $(BPF2GO) $(if $(BPF_GEN_ALL),$(BPF_GEN_ALL),generate/all)
+generate: $(if $(BPF_GEN_ALL),$(BPF_GEN_ALL),generate/all)
 
 # Pattern rule: regenerate specific eBPF files when dependencies change
-$(BPF_GEN_ALL): $(BPF2GO)
+$(BPF_GEN_ALL):
 	@echo "Generating $(dir $@)..."
 	@go generate ./$(dir $@)
 
@@ -248,7 +229,7 @@ $(BPF_GEN_ALL): $(BPF2GO)
 generate/all: export BPF_CLANG := $(CLANG)
 generate/all: export BPF_CFLAGS := $(CFLAGS)
 generate/all: export BPF2GO := $(BPF2GO)
-generate/all: $(BPF2GO)
+generate/all:
 	@echo "### Generating all eBPF files..."
 	@go generate ./...
 
@@ -301,9 +282,9 @@ compile-cache-for-coverage:
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -cover -a -o bin/$(CACHE_CMD) $(CACHE_MAIN_GO_FILE)
 
 .PHONY: test
-test: $(ENVTEST)
+test:
 	@echo "### Testing code"
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test -short -race -a ./... -coverpkg=./... -coverprofile $(TEST_OUTPUT)/cover.all.txt
+	KUBEBUILDER_ASSETS="$(shell go tool $(TOOLS_MODFILE) setup-envtest use $(ENVTEST_K8S_VERSION) -p path)" go test -short -race -a ./... -coverpkg=./... -coverprofile $(TEST_OUTPUT)/cover.all.txt
 
 .PHONY: test-privileged
 test-privileged: $(ENVTEST)
@@ -414,9 +395,9 @@ prepare-integration-test:
 	$(MAKE) cleanup-integration-test
 
 .PHONY: cleanup-integration-test
-cleanup-integration-test: $(KIND)
+cleanup-integration-test:
 	@echo "### Removing integration test clusters"
-	$(KIND) delete cluster -n test-kind-cluster || true
+	go tool $(TOOLS_MODFILE) kind delete cluster -n test-kind-cluster || true
 	@echo "### Removing docker containers and images"
 	$(eval CONTAINERS := $(shell $(OCI_BIN) ps --format '{{.Names}}' | grep 'integration-'))
 	$(if $(strip $(CONTAINERS)),$(OCI_BIN) rm -f $(CONTAINERS),@echo "No integration test containers to remove")
@@ -478,17 +459,14 @@ run-integration-test-arm:
 	go clean -testcache
 	go test -p 1 -failfast -v -timeout 90m -a ./internal/test/integration -run "^TestMultiProcess"
 
-.PHONY: unit-test-tools
-unit-test-tools: $(ENVTEST)
-
 .PHONY: unit-test-matrix-json
 unit-test-matrix-json:
 	@go list ./... | go tool $(TOOLS_MODFILE) gotestsum tool ci-matrix --partitions $${PARTITIONS:-3} --timing-files=$(TEST_OUTPUT)/unit-test-shard-*.log
 
 .PHONY: run-unit-test-shard
-run-unit-test-shard: $(ENVTEST)
+run-unit-test-shard:
 	@echo "### Running unit test shard $(SHARD_ID)"
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" \
+	KUBEBUILDER_ASSETS="$(shell go tool $(TOOLS_MODFILE) setup-envtest use $(ENVTEST_K8S_VERSION) -p path)" \
 	go tool $(TOOLS_MODFILE) gotestsum \
 		--jsonfile=$(TEST_OUTPUT)/unit-test-shard-$(SHARD_ID).log \
 		-- -short -race -a -coverpkg=./... \
