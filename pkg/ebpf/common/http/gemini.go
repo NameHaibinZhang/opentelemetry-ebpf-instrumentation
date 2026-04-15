@@ -19,10 +19,20 @@ import (
 // in both the Gemini Developer API and Vertex AI URL layouts.
 const geminiModelPrefix = "/models/"
 
-// geminiHosts lists known hostnames used by the Gemini API and Vertex AI.
-var geminiHosts = []string{
-	"generativelanguage.googleapis.com",
-	"aiplatform.googleapis.com",
+// geminiHostPattern pairs a known hostname suffix with the URL path segment
+// that must be present for the request to be considered a Gemini API call.
+type geminiHostPattern struct {
+	hostSuffix    string
+	requiredPath  string
+}
+
+// geminiHostPatterns lists known Gemini API hosts and their required path
+// segments. The Gemini Developer API uses a simple /models/ prefix, while
+// Vertex AI requires the fuller /publishers/google/models/ path to avoid
+// matching unrelated Vertex AI prediction endpoints.
+var geminiHostPatterns = []geminiHostPattern{
+	{"generativelanguage.googleapis.com", "/models/"},
+	{"aiplatform.googleapis.com", "/publishers/google/models/"},
 }
 
 func isGemini(req *http.Request, respHeader http.Header) bool {
@@ -35,7 +45,7 @@ func isGemini(req *http.Request, respHeader http.Header) bool {
 
 // isGeminiURL checks whether the request targets a known Gemini endpoint
 // by matching the hostname against known Gemini/Vertex AI hosts and
-// verifying the URL path contains a Gemini-specific model segment.
+// verifying the URL path contains the host-specific model segment.
 // This covers the googleapis/go-genai library which calls both the
 // Gemini Developer API and Vertex AI backends.
 func isGeminiURL(req *http.Request) bool {
@@ -43,25 +53,16 @@ func isGeminiURL(req *http.Request) bool {
 		return false
 	}
 
-	if !hasGeminiModelPath(req.URL.Path) {
-		return false
-	}
-
 	host := extractHostname(req)
+	path := req.URL.Path
 
-	for _, h := range geminiHosts {
-		if strings.HasSuffix(host, h) {
-			return true
+	for _, hp := range geminiHostPatterns {
+		if strings.HasSuffix(host, hp.hostSuffix) {
+			return strings.Contains(path, hp.requiredPath)
 		}
 	}
 
 	return false
-}
-
-// hasGeminiModelPath reports whether the URL path contains the
-// /models/{model}:{operation} segment used by Gemini API endpoints.
-func hasGeminiModelPath(path string) bool {
-	return strings.Contains(path, geminiModelPrefix)
 }
 
 // extractHostname returns the hostname from the request, stripping any

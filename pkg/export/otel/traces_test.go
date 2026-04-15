@@ -1199,6 +1199,27 @@ func TestGenerateTracesAttributes(t *testing.T) {
 		ensureTraceAttrNotExists(t, spanAttrs, semconv.GenAISystemInstructionsKey)
 	})
 
+	t.Run("Gemini span - dynamic operation name", func(t *testing.T) {
+		span := makeGeminiSpan(&request.VendorGemini{
+			Model:     "text-embedding-004",
+			Operation: "embed_content",
+			Output: request.GeminiResponse{
+				ModelVersion: "text-embedding-004",
+				UsageMetadata: request.GeminiUsage{
+					PromptTokenCount:     5,
+					CandidatesTokenCount: 0,
+				},
+			},
+		})
+
+		tAttrs := tracesgen.TraceAttributesSelector(&span, map[attr.Name]struct{}{})
+		traces := tracesgen.GenerateTracesWithAttributes(cache, &span.Service, []attribute.KeyValue{}, hostID, groupFromSpanAndAttributes(&span, tAttrs), reporterName)
+
+		spanAttrs := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Attributes()
+		ensureTraceStrAttr(t, spanAttrs, semconv.GenAIOperationNameKey, "embed_content")
+		ensureTraceStrAttr(t, spanAttrs, semconv.GenAIRequestModelKey, "text-embedding-004")
+	})
+
 	t.Run("Gemini span - optional attributes and error", func(t *testing.T) {
 		span := makeGeminiSpan(&request.VendorGemini{
 			Model: "gemini-2.0-flash",

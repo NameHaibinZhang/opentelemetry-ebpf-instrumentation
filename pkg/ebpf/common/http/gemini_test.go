@@ -321,6 +321,16 @@ func TestIsGeminiURL(t *testing.T) {
 			url:  "https://storage.googleapis.com/bucket/object",
 			want: false,
 		},
+		{
+			name: "Vertex AI non-Gemini prediction endpoint",
+			url:  "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/endpoints/12345:predict",
+			want: false,
+		},
+		{
+			name: "Vertex AI custom model with /models/ but no /publishers/google/",
+			url:  "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/models/my-custom-model:predict",
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
