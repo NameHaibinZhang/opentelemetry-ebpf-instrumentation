@@ -380,6 +380,10 @@ type AnthropicError struct {
 
 // Google AI Studio (Gemini) types
 
+// DefaultGeminiOperation is the fallback operation name when no operation
+// can be extracted from the URL path.
+const DefaultGeminiOperation = "generate_content"
+
 type VendorGemini struct {
 	Input     GeminiRequest
 	Output    GeminiResponse
@@ -448,12 +452,12 @@ func (g *VendorGemini) GetFinishReasons() []string {
 }
 
 // OperationName returns the Gemini API operation name.
-// It falls back to "generate_content" when no operation was extracted from the URL.
+// It falls back to DefaultGeminiOperation when no operation was extracted from the URL.
 func (g *VendorGemini) OperationName() string {
 	if g.Operation != "" {
 		return g.Operation
 	}
-	return "generate_content"
+	return DefaultGeminiOperation
 }
 
 func (g *VendorGemini) GetOutput() string {

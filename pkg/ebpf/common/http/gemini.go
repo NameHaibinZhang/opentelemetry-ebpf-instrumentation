@@ -8,11 +8,16 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
 )
+
+// geminiModelPrefix is the URL path segment that precedes the model name
+// in both the Gemini Developer API and Vertex AI URL layouts.
+const geminiModelPrefix = "/models/"
 
 // geminiHosts lists known hostnames used by the Gemini API and Vertex AI.
 var geminiHosts = []string{
@@ -29,26 +34,47 @@ func isGemini(req *http.Request, respHeader http.Header) bool {
 }
 
 // isGeminiURL checks whether the request targets a known Gemini endpoint
-// by inspecting the host and URL path. This covers the googleapis/go-genai
-// library which calls both the Gemini Developer API and Vertex AI backends.
+// by matching the hostname against known Gemini/Vertex AI hosts and
+// verifying the URL path contains a Gemini-specific model segment.
+// This covers the googleapis/go-genai library which calls both the
+// Gemini Developer API and Vertex AI backends.
 func isGeminiURL(req *http.Request) bool {
 	if req == nil || req.URL == nil {
 		return false
 	}
 
-	host := req.URL.Host
-	if host == "" {
-		host = req.Host
+	if !hasGeminiModelPath(req.URL.Path) {
+		return false
 	}
 
+	host := extractHostname(req)
+
 	for _, h := range geminiHosts {
-		if host == h || strings.HasSuffix(host, "."+h) ||
-			strings.HasSuffix(host, "-"+h) {
+		if strings.HasSuffix(host, h) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// hasGeminiModelPath reports whether the URL path contains the
+// /models/{model}:{operation} segment used by Gemini API endpoints.
+func hasGeminiModelPath(path string) bool {
+	return strings.Contains(path, geminiModelPrefix)
+}
+
+// extractHostname returns the hostname from the request, stripping any
+// port number that may be present in req.URL.Host or req.Host.
+func extractHostname(req *http.Request) string {
+	if h := req.URL.Hostname(); h != "" {
+		return h
+	}
+	host := req.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
 }
 
 func GeminiSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
@@ -104,12 +130,11 @@ func extractGeminiModel(req *http.Request) string {
 		return ""
 	}
 	path := req.URL.Path
-	const prefix = "/models/"
-	idx := strings.Index(path, prefix)
+	idx := strings.Index(path, geminiModelPrefix)
 	if idx < 0 {
 		return ""
 	}
-	model := path[idx+len(prefix):]
+	model := path[idx+len(geminiModelPrefix):]
 	if colonIdx := strings.Index(model, ":"); colonIdx >= 0 {
 		model = model[:colonIdx]
 	}
@@ -121,18 +146,17 @@ func extractGeminiModel(req *http.Request) string {
 // /models/gemini-2.0-flash:generateContent → generate_content.
 func extractGeminiOperation(req *http.Request) string {
 	if req == nil || req.URL == nil {
-		return "generate_content"
+		return request.DefaultGeminiOperation
 	}
 	path := req.URL.Path
-	const prefix = "/models/"
-	idx := strings.Index(path, prefix)
+	idx := strings.Index(path, geminiModelPrefix)
 	if idx < 0 {
-		return "generate_content"
+		return request.DefaultGeminiOperation
 	}
-	after := path[idx+len(prefix):]
+	after := path[idx+len(geminiModelPrefix):]
 	colonIdx := strings.Index(after, ":")
 	if colonIdx < 0 {
-		return "generate_content"
+		return request.DefaultGeminiOperation
 	}
 	return camelToSnake(after[colonIdx+1:])
 }
