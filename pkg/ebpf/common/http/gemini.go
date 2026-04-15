@@ -22,8 +22,8 @@ const geminiModelPrefix = "/models/"
 // geminiHostPattern pairs a known hostname suffix with the URL path segment
 // that must be present for the request to be considered a Gemini API call.
 type geminiHostPattern struct {
-	hostSuffix    string
-	requiredPath  string
+	hostSuffix   string
+	requiredPath string
 }
 
 // geminiHostPatterns lists known Gemini API hosts and their required path
