@@ -381,10 +381,15 @@ type AnthropicError struct {
 
 // Google AI Studio (Gemini) types
 
+// DefaultGeminiOperation is the fallback operation name when no operation
+// can be extracted from the URL path.
+const DefaultGeminiOperation = "generate_content"
+
 type VendorGemini struct {
-	Input  GeminiRequest
-	Output GeminiResponse
-	Model  string
+	Input     GeminiRequest
+	Output    GeminiResponse
+	Model     string
+	Operation string
 }
 
 type GeminiRequest struct {
@@ -445,6 +450,15 @@ func (g *VendorGemini) GetFinishReasons() []string {
 		}
 	}
 	return reasons
+}
+
+// OperationName returns the Gemini API operation name.
+// It falls back to DefaultGeminiOperation when no operation was extracted from the URL.
+func (g *VendorGemini) OperationName() string {
+	if g.Operation != "" {
+		return g.Operation
+	}
+	return DefaultGeminiOperation
 }
 
 func (g *VendorGemini) GetOutput() string {
@@ -1092,11 +1106,12 @@ func (s *Span) TraceName() string {
 		}
 
 		if s.Type == EventTypeHTTPClient && s.SubType == HTTPSubtypeGemini && s.GenAI != nil && s.GenAI.Gemini != nil {
+			op := s.GenAI.Gemini.OperationName()
 			model := s.GenAI.Gemini.Model
 			if model != "" {
-				return "generate_content " + model
+				return op + " " + model
 			}
-			return "generate_content"
+			return op
 		}
 
 		if s.SubType == HTTPSubtypeJSONRPC && s.JSONRPC != nil {
@@ -1369,7 +1384,7 @@ func (s *Span) GenAIOperationName() string {
 		return s.GenAI.Anthropic.Output.Type
 	}
 	if s.GenAI.Gemini != nil {
-		return "generate_content"
+		return s.GenAI.Gemini.OperationName()
 	}
 	return ""
 }
