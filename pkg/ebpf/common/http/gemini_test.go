@@ -280,6 +280,11 @@ func TestExtractGeminiOperation(t *testing.T) {
 			url:  "https://example.com/api/chat",
 			want: "generate_content",
 		},
+		{
+			name: "trailing colon with no operation",
+			url:  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:",
+			want: "generate_content",
+		},
 	}
 
 	for _, tt := range tests {

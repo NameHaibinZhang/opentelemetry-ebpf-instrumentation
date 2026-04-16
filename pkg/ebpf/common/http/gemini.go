@@ -156,7 +156,7 @@ func extractGeminiOperation(req *http.Request) string {
 	}
 	after := path[idx+len(geminiModelPrefix):]
 	colonIdx := strings.Index(after, ":")
-	if colonIdx < 0 {
+	if colonIdx < 0 || colonIdx+1 >= len(after) {
 		return request.DefaultGeminiOperation
 	}
 	return camelToSnake(after[colonIdx+1:])
