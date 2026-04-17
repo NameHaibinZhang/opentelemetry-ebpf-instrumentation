@@ -6,6 +6,7 @@ package ebpfcommon
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 	"unsafe"
@@ -103,6 +104,34 @@ func TestTCPLargeBuffers(t *testing.T) {
 	_, _, err = appendTCPLargeBuffer(pctx, toRingbufRecord(t, appendEvent, "bar"))
 	require.NoError(t, err)
 	verifyLargeBuffer(firstEvent.Tp.TraceId, firstEvent.PacketType, firstEvent.Direction, firstEvent.ConnInfo, firstBuf+"foobar")
+}
+
+func TestTCPLargeBuffersByConn(t *testing.T) {
+	pctx := NewEBPFParseContext(nil, nil, nil)
+	event := TCPLargeBufferHeader{
+		Type:       EventTypeTCPLargeBuffer,
+		PacketType: packetTypeRequest,
+		Direction:  directionSend,
+	}
+	event.Tp.TraceId = [16]uint8{'k', 'p'}
+	event.ConnInfo = BpfConnectionInfoT{S_port: 1234, D_port: 8080}
+
+	reqBody := `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"echo"}}`
+	reqBuf := fmt.Sprintf(
+		"POST /mcp HTTP/1.1\r\nHost: localhost:8080\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s",
+		len(reqBody), reqBody,
+	)
+	event.Len = uint32(len(reqBuf))
+
+	_, _, err := appendTCPLargeBuffer(pctx, toRingbufRecord(t, event, reqBuf))
+	require.NoError(t, err)
+
+	byConn, ok := extractTCPLargeBufferByConn(pctx, event.PacketType, event.Direction, event.ConnInfo)
+	require.True(t, ok, "Expected to find large buffer by connection")
+	require.Equal(t, reqBuf, unix.ByteSliceToString(byConn.UnsafeView()))
+
+	_, ok = extractTCPLargeBuffer(pctx, event.Tp.TraceId, event.PacketType, event.Direction, event.ConnInfo)
+	require.False(t, ok, "Expected large buffer to be removed from trace-id index after conn extraction")
 }
 
 func toRingbufRecord(t *testing.T, event TCPLargeBufferHeader, buf string) *ringbuf.Record {

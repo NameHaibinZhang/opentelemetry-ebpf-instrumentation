@@ -6,6 +6,7 @@ package ebpfcommon
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -19,6 +20,7 @@ import (
 	"go.opentelemetry.io/obi/pkg/appolly/app"
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
 	"go.opentelemetry.io/obi/pkg/appolly/app/svc"
+	"go.opentelemetry.io/obi/pkg/config"
 	"go.opentelemetry.io/obi/pkg/internal/ebpf/ringbuf"
 )
 
@@ -367,6 +369,73 @@ func TestMethodURLParsing(t *testing.T) {
 	i = makeBPFInfoWithBuf([]uint8("POST"))
 	assert.Empty(t, httpMethodFromBuf(i.Buf[:]))
 	assert.Empty(t, httpURLFromBuf(i.Buf[:]))
+}
+
+func TestEnrichGoHTTPSpanUsesConnectionLookupForMCP(t *testing.T) {
+	pctx := NewEBPFParseContext(nil, nil, nil)
+	pctx.payloadExtraction = config.PayloadExtraction{
+		HTTP: config.HTTPConfig{
+			GenAI: config.GenAIConfig{
+				MCP: config.MCPConfig{Enabled: true},
+			},
+		},
+	}
+
+	conn := BpfConnectionInfoT{
+		S_port: 34567,
+		D_port: 8080,
+	}
+
+	requestBody := `{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"my_tool"}}`
+	requestPayload := fmt.Sprintf(
+		"POST /mcp HTTP/1.1\r\nHost: localhost:8080\r\nMcp-Session-Id: session-123\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s",
+		len(requestBody), requestBody,
+	)
+
+	responseBody := `{"jsonrpc":"2.0","id":"1","result":{"content":[]}}`
+	responsePayload := fmt.Sprintf(
+		"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s",
+		len(responseBody), responseBody,
+	)
+
+	reqEvent := TCPLargeBufferHeader{
+		Type:       EventTypeTCPLargeBuffer,
+		PacketType: packetTypeRequest,
+		Direction:  directionByPacketType(packetTypeRequest, true),
+		Len:        uint32(len(requestPayload)),
+		ConnInfo:   conn,
+	}
+	reqEvent.Tp.TraceId = [16]uint8{'k', 'p', 'r', 'o', 'b', 'e'}
+
+	respEvent := TCPLargeBufferHeader{
+		Type:       EventTypeTCPLargeBuffer,
+		PacketType: packetTypeResponse,
+		Direction:  directionByPacketType(packetTypeResponse, true),
+		Len:        uint32(len(responsePayload)),
+		ConnInfo:   conn,
+	}
+	respEvent.Tp.TraceId = reqEvent.Tp.TraceId
+
+	_, _, err := appendTCPLargeBuffer(pctx, toRingbufRecord(t, reqEvent, requestPayload))
+	require.NoError(t, err)
+	_, _, err = appendTCPLargeBuffer(pctx, toRingbufRecord(t, respEvent, responsePayload))
+	require.NoError(t, err)
+
+	event := &HTTPRequestTrace{
+		Type: uint8(request.EventTypeHTTPClient),
+		Conn: conn,
+	}
+	event.Tp.TraceId = [16]uint8{'g', 'o', 'u', 'p', 'r', 'o', 'b', 'e'}
+
+	span := request.Span{}
+	enrichGoHTTPSpan(pctx, event, &span)
+
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.MCP)
+	assert.Equal(t, request.HTTPSubtypeMCP, span.SubType)
+	assert.Equal(t, "tools/call", span.GenAI.MCP.Method)
+	assert.Equal(t, "my_tool", span.GenAI.MCP.ToolName)
+	assert.Equal(t, "session-123", span.GenAI.MCP.SessionID)
 }
 
 func makeHTTPInfo(method, path, peer, host string, peerPort, hostPort uint32, status uint16, durationMs uint64) HTTPInfo {

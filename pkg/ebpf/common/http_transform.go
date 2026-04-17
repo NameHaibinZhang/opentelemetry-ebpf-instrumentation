@@ -242,9 +242,8 @@ func enrichGoHTTPSpan(parseCtx *EBPFParseContext, event *HTTPRequestTrace, span 
 
 	isClient := isClientEvent(event.Type)
 
-	reqBuf, reqOK := extractTCPLargeBuffer(
+	reqBuf, reqOK := extractTCPLargeBufferByConn(
 		parseCtx,
-		event.Tp.TraceId,
 		packetTypeRequest,
 		directionByPacketType(packetTypeRequest, isClient),
 		event.Conn,
@@ -253,9 +252,8 @@ func enrichGoHTTPSpan(parseCtx *EBPFParseContext, event *HTTPRequestTrace, span 
 		return
 	}
 
-	respBuf, respOK := extractTCPLargeBuffer(
+	respBuf, respOK := extractTCPLargeBufferByConn(
 		parseCtx,
-		event.Tp.TraceId,
 		packetTypeResponse,
 		directionByPacketType(packetTypeResponse, isClient),
 		event.Conn,
@@ -279,6 +277,12 @@ func enrichGoHTTPSpan(parseCtx *EBPFParseContext, event *HTTPRequestTrace, span 
 
 	if parseCtx.payloadExtraction.HTTP.GenAI.MCP.Enabled {
 		if _, ok := ebpfhttp.MCPSpan(span, req, resp); ok {
+			return
+		}
+	}
+
+	if parseCtx.payloadExtraction.HTTP.JSONRPC.Enabled {
+		if _, ok := ebpfhttp.JSONRPCSpan(span, req, resp); ok {
 			return
 		}
 	}
