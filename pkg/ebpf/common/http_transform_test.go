@@ -405,7 +405,7 @@ func TestEnrichGoHTTPSpanUsesConnectionLookupForMCP(t *testing.T) {
 		Len:        uint32(len(requestPayload)),
 		ConnInfo:   conn,
 	}
-	reqEvent.Tp.TraceId = [16]uint8{'k', 'p', 'r', 'o', 'b', 'e'}
+	reqEvent.Tp.TraceId = traceID("kprobe-trace-id")
 
 	respEvent := TCPLargeBufferHeader{
 		Type:       EventTypeTCPLargeBuffer,
@@ -425,7 +425,7 @@ func TestEnrichGoHTTPSpanUsesConnectionLookupForMCP(t *testing.T) {
 		Type: uint8(request.EventTypeHTTPClient),
 		Conn: conn,
 	}
-	event.Tp.TraceId = [16]uint8{'g', 'o', 'u', 'p', 'r', 'o', 'b', 'e'}
+	event.Tp.TraceId = traceID("gouprobe-trace")
 
 	span := request.Span{}
 	enrichGoHTTPSpan(pctx, event, &span)
@@ -436,6 +436,12 @@ func TestEnrichGoHTTPSpanUsesConnectionLookupForMCP(t *testing.T) {
 	assert.Equal(t, "tools/call", span.GenAI.MCP.Method)
 	assert.Equal(t, "my_tool", span.GenAI.MCP.ToolName)
 	assert.Equal(t, "session-123", span.GenAI.MCP.SessionID)
+}
+
+func traceID(v string) [16]uint8 {
+	var id [16]uint8
+	copy(id[:], v)
+	return id
 }
 
 func makeHTTPInfo(method, path, peer, host string, peerPort, hostPort uint32, status uint16, durationMs uint64) HTTPInfo {

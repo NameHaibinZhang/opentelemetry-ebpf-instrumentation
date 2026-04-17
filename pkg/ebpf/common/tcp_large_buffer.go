@@ -139,13 +139,13 @@ func extractTCPLargeBufferByConn(
 		connInfo:   connInfo,
 	}
 
-	lb, ok := parseCtx.connBuffers.Get(connKey)
+	connBuf, ok := parseCtx.connBuffers.Get(connKey)
 	if !ok {
 		return nil, false
 	}
 
 	parseCtx.connBuffers.Remove(connKey)
-	parseCtx.largeBuffers.Remove(lb.largeBufferKey)
+	parseCtx.largeBuffers.Remove(connBuf.largeBufferKey)
 
-	return lb.buffer, true
+	return connBuf.buffer, true
 }

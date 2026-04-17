@@ -276,13 +276,17 @@ func enrichGoHTTPSpan(parseCtx *EBPFParseContext, event *HTTPRequestTrace, span 
 	defer resp.Body.Close()
 
 	if parseCtx.payloadExtraction.HTTP.GenAI.MCP.Enabled {
-		if _, ok := ebpfhttp.MCPSpan(span, req, resp); ok {
+		mcpSpan, detected := ebpfhttp.MCPSpan(span, req, resp)
+		if detected {
+			*span = mcpSpan
 			return
 		}
 	}
 
 	if parseCtx.payloadExtraction.HTTP.JSONRPC.Enabled {
-		if _, ok := ebpfhttp.JSONRPCSpan(span, req, resp); ok {
+		jsonrpcSpan, detected := ebpfhttp.JSONRPCSpan(span, req, resp)
+		if detected {
+			*span = jsonrpcSpan
 			return
 		}
 	}
