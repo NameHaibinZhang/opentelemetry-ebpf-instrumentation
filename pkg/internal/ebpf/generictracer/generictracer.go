@@ -86,22 +86,30 @@ func pidSegmentBit(k uint64) (uint32, uint32) {
 
 func (p *Tracer) buildPidFilter() []uint64 {
 	result := make([]uint64, maxConcurrentPids)
-	for nsid, pids := range p.pidsFilter.CurrentPIDs(ebpfcommon.PIDTypeKProbes) {
+	p.addPidsToFilter(result, ebpfcommon.PIDTypeKProbes)
+
+	// When payload extraction is enabled, also include Go PIDs so that
+	// kprobe events can supplement Go tracer data with body-based
+	// protocol detection (e.g. MCP, GenAI).
+	if p.cfg.EBPF.PayloadExtraction.Enabled() {
+		p.addPidsToFilter(result, ebpfcommon.PIDTypeGo)
+	}
+
+	return result
+}
+
+func (p *Tracer) addPidsToFilter(result []uint64, pidType ebpfcommon.PIDType) {
+	for nsid, pids := range p.pidsFilter.CurrentPIDs(pidType) {
 		for pid := range pids {
-			// skip any pids that might've been added, but are not tracked by the kprobes
 			p.log.Debug("Reallowing pid", "pid", pid, "namespace", nsid)
 
 			k := (uint64(nsid) << 32) | uint64(pid)
 
 			segment, bit := pidSegmentBit(k)
 
-			v := result[segment]
-			v |= (1 << bit)
-			result[segment] = v
+			result[segment] |= (1 << bit)
 		}
 	}
-
-	return result
 }
 
 func (p *Tracer) rebuildValidPids() {
@@ -529,6 +537,12 @@ func (p *Tracer) Run(ctx context.Context, ebpfEventContext *ebpfcommon.EBPFEvent
 		p.log.Error("BPF Pids map is not created yet, this is a bug.")
 	}
 
+	// When payload extraction is enabled, periodically rebuild the PID
+	// filter to pick up Go PIDs registered after initial startup.
+	if p.cfg.EBPF.PayloadExtraction.Enabled() {
+		go p.periodicPIDFilterRebuild(ctx)
+	}
+
 	timeoutTicker := time.NewTicker(2 * time.Second)
 	parseContext := ebpfcommon.NewEBPFParseContext(&p.cfg.EBPF, eventsChan, p.pidsFilter)
 
@@ -562,6 +576,19 @@ func (p *Tracer) Run(ctx context.Context, ebpfEventContext *ebpfcommon.EBPFEvent
 		p.log,
 		p.metrics,
 	)(ctx, append(p.closers, &p.bpfObjects), eventsChan)
+}
+
+func (p *Tracer) periodicPIDFilterRebuild(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p.rebuildValidPids()
+		}
+	}
 }
 
 func kernelTime(ktime uint64) time.Time {

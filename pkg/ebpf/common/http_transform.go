@@ -232,6 +232,58 @@ func ReadHTTPInfoIntoSpan(parseCtx *EBPFParseContext, record *ringbuf.Record, fi
 	return HTTPInfoEventToSpan(parseCtx, event)
 }
 
+// enrichGoHTTPSpan attempts to enrich a Go tracer HTTP span with body-based
+// protocol detection (e.g. MCP) by extracting large buffer data that kprobes
+// captured for the same connection.
+func enrichGoHTTPSpan(parseCtx *EBPFParseContext, event *HTTPRequestTrace, span *request.Span) {
+	if parseCtx == nil || !parseCtx.payloadExtraction.Enabled() {
+		return
+	}
+
+	isClient := isClientEvent(event.Type)
+
+	reqBuf, reqOK := extractTCPLargeBuffer(
+		parseCtx,
+		event.Tp.TraceId,
+		packetTypeRequest,
+		directionByPacketType(packetTypeRequest, isClient),
+		event.Conn,
+	)
+	if !reqOK {
+		return
+	}
+
+	respBuf, respOK := extractTCPLargeBuffer(
+		parseCtx,
+		event.Tp.TraceId,
+		packetTypeResponse,
+		directionByPacketType(packetTypeResponse, isClient),
+		event.Conn,
+	)
+	if !respOK {
+		return
+	}
+
+	reqReader := reqBuf.NewReader()
+	req, err := http.ReadRequest(bufio.NewReader(&reqReader))
+	if err != nil {
+		return
+	}
+	defer req.Body.Close()
+
+	resp, err := httpSafeParseResponse(respBuf, req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	if parseCtx.payloadExtraction.HTTP.GenAI.MCP.Enabled {
+		if _, ok := ebpfhttp.MCPSpan(span, req, resp); ok {
+			return
+		}
+	}
+}
+
 func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (request.Span, bool, error) {
 	var (
 		requestBuffer, responseBuffer *largebuf.LargeBuffer

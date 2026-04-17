@@ -376,7 +376,10 @@ func ReadBPFTraceAsSpan(parseCtx *EBPFParseContext, cfg *config.EBPFTracer, reco
 		return request.Span{}, true, err
 	}
 
-	return HTTPRequestTraceToSpan(event), false, nil
+	span := HTTPRequestTraceToSpan(event)
+	enrichGoHTTPSpan(parseCtx, event, &span)
+
+	return span, false, nil
 }
 
 func ReinterpretCast[T any](b []byte) (*T, error) {
