@@ -18,6 +18,16 @@ type largeBufferKey struct {
 	connInfo              BpfConnectionInfoT
 }
 
+type connBufferKey struct {
+	packetType, direction uint8
+	connInfo              BpfConnectionInfoT
+}
+
+type connBufferValue struct {
+	largeBufferKey largeBufferKey
+	buffer         *largebuf.LargeBuffer
+}
+
 const (
 	largeBufferActionInit = iota
 	largeBufferActionAppend
@@ -37,6 +47,11 @@ func appendTCPLargeBuffer(parseCtx *EBPFParseContext, record *ringbuf.Record) (r
 		direction:  event.Direction,
 		connInfo:   event.ConnInfo,
 	}
+	connKey := connBufferKey{
+		packetType: event.PacketType,
+		direction:  event.Direction,
+		connInfo:   event.ConnInfo,
+	}
 
 	if parseCtx.protocolDebug {
 		fmt.Printf(">>> LargeBufferAppend: (packet=%d direction=%d action=%d size=%d)\n%s\n",
@@ -50,6 +65,10 @@ func appendTCPLargeBuffer(parseCtx *EBPFParseContext, record *ringbuf.Record) (r
 		lb := largebuf.NewLargeBuffer()
 		lb.AppendChunk(b)
 		parseCtx.largeBuffers.Add(key, lb)
+		parseCtx.connBuffers.Add(connKey, connBufferValue{
+			largeBufferKey: key,
+			buffer:         lb,
+		})
 	}
 
 	switch event.Action {
@@ -61,6 +80,10 @@ func appendTCPLargeBuffer(parseCtx *EBPFParseContext, record *ringbuf.Record) (r
 			initFunc(chunk)
 		} else {
 			lb.AppendChunk(chunk)
+			parseCtx.connBuffers.Add(connKey, connBufferValue{
+				largeBufferKey: key,
+				buffer:         lb,
+			})
 		}
 	default:
 		return request.Span{}, true, fmt.Errorf("invalid large buffer action: %d", event.Action)
@@ -96,6 +119,33 @@ func extractTCPLargeBuffer(
 	}
 
 	parseCtx.largeBuffers.Remove(key)
+	parseCtx.connBuffers.Remove(connBufferKey{
+		packetType: key.packetType,
+		direction:  key.direction,
+		connInfo:   key.connInfo,
+	})
 
 	return lb, true
+}
+
+func extractTCPLargeBufferByConn(
+	parseCtx *EBPFParseContext,
+	packetType, direction uint8,
+	connInfo BpfConnectionInfoT,
+) (*largebuf.LargeBuffer, bool) {
+	connKey := connBufferKey{
+		packetType: packetType,
+		direction:  direction,
+		connInfo:   connInfo,
+	}
+
+	connBuf, ok := parseCtx.connBuffers.Get(connKey)
+	if !ok {
+		return nil, false
+	}
+
+	parseCtx.connBuffers.Remove(connKey)
+	parseCtx.largeBuffers.Remove(connBuf.largeBufferKey)
+
+	return connBuf.buffer, true
 }
