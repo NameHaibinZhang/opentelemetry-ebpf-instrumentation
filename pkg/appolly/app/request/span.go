@@ -1279,6 +1279,14 @@ func (s *Span) TraceName() string {
 			return "invoke_model"
 		}
 
+		if s.SubType == HTTPSubtypeMCP && s.GenAI != nil && s.GenAI.MCP != nil {
+			op := s.GenAI.MCP.OperationName()
+			if s.GenAI.MCP.ToolName != "" {
+				return op + " " + s.GenAI.MCP.ToolName
+			}
+			return op
+		}
+
 		if s.SubType == HTTPSubtypeJSONRPC && s.JSONRPC != nil {
 			if s.JSONRPC.Method != "" {
 				return s.JSONRPC.Method
