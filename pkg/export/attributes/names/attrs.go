@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.38.0"
+	semconv_v140 "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"go.opentelemetry.io/obi/pkg/buildinfo"
 )
@@ -258,6 +259,16 @@ const (
 	JSONRPCProtocolVersion = Name("jsonrpc.protocol.version")
 	JSONRPCRequestID       = Name("jsonrpc.request.id")
 	RPCResponseStatusCode  = Name("rpc.response.status_code")
+)
+
+// MCP (Model Context Protocol) attributes
+const (
+	MCPMethodName      = Name(semconv_v140.McpMethodNameKey)
+	MCPSessionID       = Name(semconv_v140.McpSessionIDKey)
+	MCPProtocolVersion = Name(semconv_v140.McpProtocolVersionKey)
+	MCPResourceURI     = Name(semconv_v140.McpResourceURIKey)
+	GenAIToolName      = Name(semconv_v140.GenAIToolNameKey)
+	GenAIPromptName    = Name(semconv_v140.GenAIPromptNameKey)
 )
 
 // DNS events
