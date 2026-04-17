@@ -2174,9 +2174,15 @@
           ],
           "x-env-var": "OTEL_EBPF_BACKOFF_MAX_INTERVAL"
         },
+        "batch_max_size": {
+          "type": "integer",
+          "description": "BatchMaxSize is the maximum number of spans that the batcher will accumulate before flushing a batch to the sending queue.",
+          "x-env-var": "OTEL_EBPF_OTLP_TRACES_BATCH_MAX_SIZE"
+        },
         "batch_timeout": {
           "type": "string",
           "pattern": "^[0-9]+(ms|s|m)$",
+          "description": "BatchTimeout is the time after which a batch will be sent regardless of its size.",
           "examples": [
             "30s",
             "5m",
@@ -2218,11 +2224,6 @@
           "description": "Allows configuration of which instrumentations should be enabled, e.g. http, grpc, sql...",
           "x-env-var": "OTEL_EBPF_TRACES_INSTRUMENTATIONS"
         },
-        "max_queue_size": {
-          "type": "integer",
-          "description": "Configuration options below this line will remain undocumented at the moment, but can be useful for performance-tuning of some customers.",
-          "x-env-var": "OTEL_EBPF_OTLP_TRACES_MAX_QUEUE_SIZE"
-        },
         "otel_sdk_log_level": {
           "type": "string",
           "description": "SDKLogLevel works independently from the global LogLevel because it prints GBs of logs in Debug mode and the Info messages leak internal details that are not usually valuable for the final user. Accepted values: debug, info, warn, error (case-insensitive). dpanic/panic/fatal are mapped to error.",
@@ -2238,6 +2239,11 @@
             "http/protobuf"
           ],
           "x-env-var": "OTEL_EXPORTER_OTLP_PROTOCOL"
+        },
+        "queue_size": {
+          "type": "integer",
+          "description": "QueueSize is the maximum number of spans that the sending queue will hold before applying back-pressure. It must be >= 2 * BatchMaxSize, otherwise the memory queue rejects every batch with \"element size too large\" and drops spans permanently. If left at 0 it defaults to 4 * BatchMaxSize.",
+          "x-env-var": "OTEL_EBPF_OTLP_TRACES_QUEUE_SIZE"
         },
         "reporters_cache_len": {
           "type": "integer",
