@@ -77,7 +77,8 @@ through language-specific library instrumentation documented later in this file.
 | AWS S3 | All | `CreateBucket`, `DeleteBucket`, `PutObject`, `DeleteObject`, `ListBuckets`, `ListObjects`, `GetObject` | Yes | No | None documented |
 | AWS SQS | All | All | Yes | No | None documented |
 | SQL++ | All | All | Yes | No | None documented |
-| GenAI | All | All | Yes | No | Supported vendors are OpenAI and Anthropic |
+| GenAI | All | All | Yes | No | Supported vendors: OpenAI, Anthropic, Google AI Studio (Gemini), AWS Bedrock |
+| MCP | `2.0` (JSON-RPC) | All | Yes | No | Requires HTTP payload capture enabled and `OTEL_EBPF_HTTP_MCP_ENABLED=true` |
 
 ## Runtime, Server, And Library Instrumentation
 

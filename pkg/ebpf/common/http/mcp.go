@@ -15,24 +15,24 @@ import (
 
 // mcpMethods enumerates known MCP JSON-RPC method names.
 var mcpMethods = map[string]bool{
-	"initialize":                     true,
-	"notifications/initialized":      true,
-	"tools/call":                     true,
-	"tools/list":                     true,
-	"resources/read":                 true,
-	"resources/list":                 true,
-	"resources/subscribe":            true,
-	"resources/unsubscribe":          true,
-	"resources/templates/list":       true,
-	"prompts/get":                    true,
-	"prompts/list":                   true,
-	"completion/complete":            true,
-	"logging/setLevel":               true,
-	"notifications/cancelled":        true,
-	"notifications/resources/updated": true,
-	"notifications/tools/list_changed": true,
+	"initialize":                         true,
+	"notifications/initialized":          true,
+	"tools/call":                         true,
+	"tools/list":                         true,
+	"resources/read":                     true,
+	"resources/list":                     true,
+	"resources/subscribe":                true,
+	"resources/unsubscribe":              true,
+	"resources/templates/list":           true,
+	"prompts/get":                        true,
+	"prompts/list":                       true,
+	"completion/complete":                true,
+	"logging/setLevel":                   true,
+	"notifications/cancelled":            true,
+	"notifications/resources/updated":    true,
+	"notifications/tools/list_changed":   true,
 	"notifications/prompts/list_changed": true,
-	"ping":                           true,
+	"ping":                               true,
 }
 
 // mcpSessionHeader is the HTTP header that carries the MCP session identifier.
@@ -108,7 +108,7 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 	}
 
 	if !mcpMethods[rpcReq.Method] {
-		// Not a recognised MCP method. Check whether the session header
+		// Not a recognized MCP method. Check whether the session header
 		// was present — that still qualifies the request as MCP even if
 		// the method is unknown (e.g. a custom extension method).
 		if sessionID == "" {

@@ -14,14 +14,13 @@ import (
 
 	"github.com/gavv/monotime"
 
+	"go.opentelemetry.io/obi/pkg/appolly/app"
+	"go.opentelemetry.io/obi/pkg/appolly/app/svc"
+	attr "go.opentelemetry.io/obi/pkg/export/attributes/names"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.38.0"
 	"go.opentelemetry.io/otel/trace"
-
-	"go.opentelemetry.io/obi/pkg/appolly/app"
-	"go.opentelemetry.io/obi/pkg/appolly/app/svc"
-	attr "go.opentelemetry.io/obi/pkg/export/attributes/names"
 )
 
 type EventType uint8
@@ -615,13 +614,13 @@ func (b *VendorBedrock) GetStopReason() string {
 // MCPCall holds parsed data from a Model Context Protocol request/response.
 type MCPCall struct {
 	Method       string `json:"method"`                 // mcp.method.name
-	ToolName     string `json:"toolName,omitempty"`      // gen_ai.tool.name (tools/call)
-	ResourceURI  string `json:"resourceUri,omitempty"`   // mcp.resource.uri (resources/read)
-	PromptName   string `json:"promptName,omitempty"`    // gen_ai.prompt.name (prompts/get)
-	SessionID    string `json:"sessionId,omitempty"`     // mcp.session.id
-	ProtocolVer  string `json:"protocolVer,omitempty"`   // mcp.protocol.version
-	RequestID    string `json:"requestId,omitempty"`     // jsonrpc.request.id
-	ErrorCode    int    `json:"errorCode,omitempty"`     // JSON-RPC error code
+	ToolName     string `json:"toolName,omitempty"`     // gen_ai.tool.name (tools/call)
+	ResourceURI  string `json:"resourceUri,omitempty"`  // mcp.resource.uri (resources/read)
+	PromptName   string `json:"promptName,omitempty"`   // gen_ai.prompt.name (prompts/get)
+	SessionID    string `json:"sessionId,omitempty"`    // mcp.session.id
+	ProtocolVer  string `json:"protocolVer,omitempty"`  // mcp.protocol.version
+	RequestID    string `json:"requestId,omitempty"`    // jsonrpc.request.id
+	ErrorCode    int    `json:"errorCode,omitempty"`    // JSON-RPC error code
 	ErrorMessage string `json:"errorMessage,omitempty"` // JSON-RPC error message
 }
 

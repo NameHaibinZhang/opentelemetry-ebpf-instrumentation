@@ -129,12 +129,6 @@ func mcpHeaders() http.Header {
 	return h
 }
 
-func mcpHeadersWithSession(sessionID string) http.Header {
-	h := mcpHeaders()
-	h.Set("Mcp-Session-Id", sessionID)
-	return h
-}
-
 func TestMCPSpan_ToolCall(t *testing.T) {
 	req := makeRequest(t, http.MethodPost, "http://localhost:8080/mcp", mcpToolCallRequest)
 	req.Header.Set("Mcp-Session-Id", "sess-abc-123")

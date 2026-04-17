@@ -24,6 +24,7 @@ through language-specific library instrumentation documented later in this file.
 | AWS SQS       |    All    |         All | All                                                                                      |  Yes   |                 No |                                                                                                                             N/A
 | SQL++         |    All    |         All | All                                                                                      |  Yes   |                 No |                                                                                                                             N/A
 | GenAI         |    All    |         All | All                                                                                      |  Yes   |                 No |                                                                                            Supported vendors: OpenAI, Anthropic, Google AI Studio (Gemini), AWS Bedrock
+| MCP           |    All    |         2.0 | All                                                                                      |  Yes   |                 No |                              Requires HTTP payload capture enabled (`OTEL_EBPF_BPF_BUFFER_SIZE_HTTP`) and `OTEL_EBPF_HTTP_MCP_ENABLED=true`
 
 ## Go Instrumentation
 
