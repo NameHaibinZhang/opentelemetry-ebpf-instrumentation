@@ -89,7 +89,6 @@ func gzipBody(t *testing.T, body string) io.ReadCloser {
 	return io.NopCloser(&buf)
 }
 
-//nolint:unparam
 func makeRequest(t *testing.T, method, url, body string) *http.Request {
 	t.Helper()
 	req, err := http.NewRequest(method, url, strings.NewReader(body))
