@@ -178,6 +178,9 @@ var DefaultConfig = Config{
 					Bedrock: config.BedrockConfig{
 						Enabled: false,
 					},
+					MCP: config.MCPConfig{
+						Enabled: false,
+					},
 				},
 				Enrichment: config.EnrichmentConfig{
 					Enabled: false,
