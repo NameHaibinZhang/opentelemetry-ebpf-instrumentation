@@ -1666,7 +1666,7 @@ func TestGenerateTracesAttributes(t *testing.T) {
 		assert.Empty(t, status.Message())
 
 		ensureTraceStrAttr(t, attrs, "mcp.method.name", "tools/call")
-		ensureTraceStrAttr(t, attrs, string(semconv.GenAIOperationNameKey), "execute_tool")
+		ensureTraceStrAttr(t, attrs, "gen_ai.operation.name", "execute_tool")
 		ensureTraceStrAttr(t, attrs, "gen_ai.tool.name", "get-weather")
 		ensureTraceStrAttr(t, attrs, "mcp.session.id", "sess-abc")
 		ensureTraceStrAttr(t, attrs, "mcp.protocol.version", "2025-03-26")
@@ -1709,7 +1709,7 @@ func TestGenerateTracesAttributes(t *testing.T) {
 		ensureTraceStrAttr(t, attrs, "mcp.session.id", "sess-abc")
 		ensureTraceStrAttr(t, attrs, "jsonrpc.request.id", "2")
 		ensureTraceStrAttr(t, attrs, "rpc.response.status_code", "-32602")
-		ensureTraceStrAttr(t, attrs, string(semconv.ErrorMessageKey), "Unknown tool: nonexistent")
+		ensureTraceStrAttr(t, attrs, "error.message", "Unknown tool: nonexistent")
 	})
 	t.Run("test MCP client span with error", func(t *testing.T) {
 		span := request.Span{
@@ -1745,7 +1745,7 @@ func TestGenerateTracesAttributes(t *testing.T) {
 		ensureTraceStrAttr(t, attrs, "gen_ai.tool.name", "get-weather")
 		ensureTraceStrAttr(t, attrs, "jsonrpc.request.id", "3")
 		ensureTraceStrAttr(t, attrs, "rpc.response.status_code", "-32600")
-		ensureTraceStrAttr(t, attrs, string(semconv.ErrorMessageKey), "Invalid Request")
+		ensureTraceStrAttr(t, attrs, "error.message", "Invalid Request")
 	})
 	t.Run("test HTTP span without headers has no header attributes", func(t *testing.T) {
 		span := request.Span{
