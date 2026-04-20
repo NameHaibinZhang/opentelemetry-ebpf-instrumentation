@@ -97,13 +97,15 @@ const (
 	HTTPSubtypeGemini        = 8  // http + Google AI Studio (Gemini)
 	HTTPSubtypeJSONRPC       = 9  // http + JSON-RPC
 	HTTPSubtypeAWSBedrock    = 10 // http + AWS Bedrock
+	HTTPSubtypeMCP           = 11 // http + Model Context Protocol
 )
 
 func IsGenAISubtype(subtype int) bool {
 	return subtype == HTTPSubtypeOpenAI ||
 		subtype == HTTPSubtypeAnthropic ||
 		subtype == HTTPSubtypeGemini ||
-		subtype == HTTPSubtypeAWSBedrock
+		subtype == HTTPSubtypeAWSBedrock ||
+		subtype == HTTPSubtypeMCP
 }
 
 //nolint:cyclop
@@ -253,6 +255,7 @@ type GenAI struct {
 	Anthropic *VendorAnthropic
 	Gemini    *VendorGemini
 	Bedrock   *VendorBedrock
+	MCP       *MCPCall
 }
 
 type OpenAIUsage struct {
@@ -607,6 +610,28 @@ func (b *VendorBedrock) GetStopReason() string {
 		return b.Output.StopReasonNova
 	}
 	return ""
+}
+
+// MCPCall holds parsed data from a Model Context Protocol request/response.
+type MCPCall struct {
+	Method       string `json:"method"`                 // mcp.method.name
+	ToolName     string `json:"toolName,omitempty"`     // gen_ai.tool.name (tools/call)
+	ResourceURI  string `json:"resourceUri,omitempty"`  // mcp.resource.uri (resources/read)
+	PromptName   string `json:"promptName,omitempty"`   // gen_ai.prompt.name (prompts/get)
+	SessionID    string `json:"sessionId,omitempty"`    // mcp.session.id
+	ProtocolVer  string `json:"protocolVer,omitempty"`  // mcp.protocol.version
+	RequestID    string `json:"requestId,omitempty"`    // jsonrpc.request.id
+	ErrorCode    int    `json:"errorCode,omitempty"`    // JSON-RPC error code
+	ErrorMessage string `json:"errorMessage,omitempty"` // JSON-RPC error message
+}
+
+// OperationName returns the GenAI operation name for the MCP method.
+// tools/call maps to execute_tool; other methods return the method name as-is.
+func (m *MCPCall) OperationName() string {
+	if m.Method == "tools/call" {
+		return "execute_tool"
+	}
+	return m.Method
 }
 
 type JSONRPC struct {
@@ -1254,6 +1279,14 @@ func (s *Span) TraceName() string {
 			return "invoke_model"
 		}
 
+		if s.SubType == HTTPSubtypeMCP && s.GenAI != nil && s.GenAI.MCP != nil {
+			op := s.GenAI.MCP.OperationName()
+			if s.GenAI.MCP.ToolName != "" {
+				return op + " " + s.GenAI.MCP.ToolName
+			}
+			return op
+		}
+
 		if s.SubType == HTTPSubtypeJSONRPC && s.JSONRPC != nil {
 			if s.JSONRPC.Method != "" {
 				return s.JSONRPC.Method
@@ -1536,6 +1569,9 @@ func (s *Span) GenAIOperationName() string {
 	}
 	if s.GenAI.Bedrock != nil {
 		return "invoke_model"
+	}
+	if s.GenAI.MCP != nil {
+		return s.GenAI.MCP.OperationName()
 	}
 	return ""
 }
