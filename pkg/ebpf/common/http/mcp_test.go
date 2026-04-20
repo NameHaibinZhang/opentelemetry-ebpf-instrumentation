@@ -295,6 +295,18 @@ func TestMCPSpan_NotMCP_EmptyBody(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestMCPSpan_NotMCP_NotJSONRPC2(t *testing.T) {
+	// A valid JSON object with an MCP method but without jsonrpc: "2.0" should be rejected.
+	body := `{"method": "tools/call", "params": {"name": "get-weather"}, "id": 1}`
+	req := makeRequest(t, http.MethodPost, "http://localhost:8080/mcp", body)
+	resp := makePlainResponse(http.StatusOK, mcpHeaders(), "{}")
+
+	base := &request.Span{}
+	_, ok := MCPSpan(base, req, resp)
+
+	assert.False(t, ok)
+}
+
 func TestMCPSpan_UnknownMethodWithSessionHeader(t *testing.T) {
 	// An unknown method should still be detected as MCP if the session header is present.
 	body := `{"jsonrpc": "2.0", "method": "custom/extension", "params": {}, "id": 10}`

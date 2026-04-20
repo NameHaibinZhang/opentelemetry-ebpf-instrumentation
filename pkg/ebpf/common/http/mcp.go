@@ -107,6 +107,11 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 		return *baseSpan, false
 	}
 
+	// MCP requires JSON-RPC 2.0.
+	if rpcReq.JSONRPC != "2.0" {
+		return *baseSpan, false
+	}
+
 	if !mcpMethods[rpcReq.Method] {
 		// Not a recognized MCP method. Check whether the session header
 		// was present — that still qualifies the request as MCP even if
