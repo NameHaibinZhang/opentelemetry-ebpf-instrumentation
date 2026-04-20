@@ -260,6 +260,16 @@ const (
 	RPCResponseStatusCode  = Name("rpc.response.status_code")
 )
 
+// MCP (Model Context Protocol) attributes
+const (
+	MCPMethodName      = Name("mcp.method.name")
+	MCPSessionID       = Name("mcp.session.id")
+	MCPProtocolVersion = Name("mcp.protocol.version")
+	MCPResourceURI     = Name("mcp.resource.uri")
+	GenAIToolName      = Name("gen_ai.tool.name")
+	GenAIPromptName    = Name("gen_ai.prompt.name")
+)
+
 // DNS events
 const (
 	DNSQuestionName = Name(semconv.DNSQuestionNameKey)
