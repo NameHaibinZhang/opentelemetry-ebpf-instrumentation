@@ -1042,9 +1042,15 @@ func SpanStatusMessage(span *Span) string {
 		if span.SubType == HTTPSubtypeJSONRPC && span.JSONRPC != nil && span.JSONRPC.ErrorMessage != "" {
 			return span.JSONRPC.ErrorMessage
 		}
+		if span.SubType == HTTPSubtypeMCP && span.GenAI != nil && span.GenAI.MCP != nil && span.GenAI.MCP.ErrorMessage != "" {
+			return span.GenAI.MCP.ErrorMessage
+		}
 	case EventTypeHTTP:
 		if span.SubType == HTTPSubtypeJSONRPC && span.JSONRPC != nil && span.JSONRPC.ErrorMessage != "" {
 			return span.JSONRPC.ErrorMessage
+		}
+		if span.SubType == HTTPSubtypeMCP && span.GenAI != nil && span.GenAI.MCP != nil && span.GenAI.MCP.ErrorMessage != "" {
+			return span.GenAI.MCP.ErrorMessage
 		}
 	}
 	return ""
@@ -1058,6 +1064,11 @@ func HTTPSpanStatusCode(span *Span) string {
 
 	// JSON-RPC errors are signaled in the response body, not via HTTP status code.
 	if span.SubType == HTTPSubtypeJSONRPC && span.JSONRPC != nil && span.JSONRPC.ErrorCode != 0 {
+		return StatusCodeError
+	}
+
+	// MCP errors are signaled in the JSON-RPC response body.
+	if span.SubType == HTTPSubtypeMCP && span.GenAI != nil && span.GenAI.MCP != nil && span.GenAI.MCP.ErrorCode != 0 {
 		return StatusCodeError
 	}
 
