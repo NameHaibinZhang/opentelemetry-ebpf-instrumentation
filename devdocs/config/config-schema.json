@@ -843,6 +843,10 @@
           "$ref": "#/$defs/GeminiConfig",
           "description": "Google AI Studio (Gemini) payload extraction and parsing"
         },
+         "mcp": {
+          "$ref": "#/$defs/MCPConfig",
+          "description": "Model Context Protocol (MCP) payload extraction and parsing"
+        },
         "openai": {
           "$ref": "#/$defs/OpenAIConfig",
           "description": "Payload extraction and parsing"
