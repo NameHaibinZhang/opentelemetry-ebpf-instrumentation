@@ -241,8 +241,6 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 
 	slog.Debug("Event", "traceID", event.Tp.TraceId, "conn", event.ConnInfo, "buf", event.Buf[:])
 
-	slog.Debug("HTTPInfoEventToSpan", "hasLargeBuffers", event.HasLargeBuffers, "traceID", event.Tp.TraceId)
-
 	if event.HasLargeBuffers == 1 {
 		b, ok := extractTCPLargeBuffer(parseCtx, event.Tp.TraceId, packetTypeRequest, directionByPacketType(packetTypeRequest, isClient), event.ConnInfo)
 		if ok {
@@ -264,12 +262,13 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 	}
 
 	if parseCtx != nil && !parseCtx.payloadExtraction.Enabled() {
-		slog.Debug("HTTPInfoEventToSpan: payload extraction disabled, skipping detection chain", "traceID", event.Tp.TraceId)
+		// There's no need to parse HTTP headers/body,
+		// create the span directly.
 		return httpRequestToSpan(event, requestBuffer), false, nil
 	}
 
 	if !hasResponse {
-		slog.Debug("HTTPInfoEventToSpan: no response buffer, skipping detection chain", "traceID", event.Tp.TraceId, "hasLargeBuffers", event.HasLargeBuffers)
+		// Large buffers disabled
 		return httpRequestToSpan(event, requestBuffer), false, nil
 	}
 

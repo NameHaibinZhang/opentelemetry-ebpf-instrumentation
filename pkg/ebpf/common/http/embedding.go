@@ -57,16 +57,8 @@ func isEmbeddingProvider(req *http.Request) string {
 // and DashScope based on hostname and URL path matching, and extracts
 // embedding-specific fields into the span.
 func EmbeddingSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
-	host := extractHostname(req)
-	path := ""
-	if req != nil && req.URL != nil {
-		path = req.URL.Path
-	}
-	slog.Debug("EmbeddingSpan called", "host", host, "path", path)
-
 	provider := isEmbeddingProvider(req)
 	if provider == "" {
-		slog.Debug("EmbeddingSpan: no provider matched", "host", host, "path", path)
 		return *baseSpan, false
 	}
 
@@ -77,10 +69,11 @@ func EmbeddingSpan(baseSpan *request.Span, req *http.Request, resp *http.Respons
 	}
 	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 
+	// Response body parsing is best-effort: gzip-compressed or truncated
+	// responses should not prevent provider detection.
 	respB, err := getResponseBody(resp)
-	if err != nil && len(respB) == 0 {
-		slog.Debug("EmbeddingSpan: failed to read response body", "provider", provider, "error", err)
-		return *baseSpan, false
+	if err != nil {
+		slog.Debug("EmbeddingSpan: failed to read response body, continuing without it", "provider", provider, "error", err)
 	}
 
 	slog.Debug("Embedding", "provider", provider, "request", string(reqB), "response", string(respB))
