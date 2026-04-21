@@ -418,8 +418,7 @@ func TestHTTPRequestResponseToSpan_EmbeddingTakesPriorityOverOpenAI(t *testing.T
 		payloadExtraction: config.PayloadExtraction{
 			HTTP: config.HTTPConfig{
 				GenAI: config.GenAIConfig{
-					OpenAI:   config.OpenAIConfig{Enabled: true},
-					Embedding: config.EmbeddingProviderConfig{Enabled: true},
+					Embedding: config.EmbeddingProviderConfig{Enabled: true}, OpenAI: config.OpenAIConfig{Enabled: true},
 				},
 			},
 		},
@@ -437,9 +436,9 @@ func TestHTTPRequestResponseToSpan_EmbeddingTakesPriorityOverOpenAI(t *testing.T
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Header: http.Header{
-			"Content-Type":       []string{"application/json"},
-			"Openai-Version":     []string{"2020-10-01"},
+			"Content-Type":        []string{"application/json"},
 			"Openai-Organization": []string{"org-123"},
+			"Openai-Version":      []string{"2020-10-01"},
 		},
 		Body: io.NopCloser(strings.NewReader(respBody)),
 	}
@@ -465,8 +464,7 @@ func TestHTTPRequestResponseToSpan_OpenAIEmbeddingDetectedByOpenAISpan(t *testin
 		payloadExtraction: config.PayloadExtraction{
 			HTTP: config.HTTPConfig{
 				GenAI: config.GenAIConfig{
-					OpenAI:   config.OpenAIConfig{Enabled: true},
-					Embedding: config.EmbeddingProviderConfig{Enabled: true},
+					Embedding: config.EmbeddingProviderConfig{Enabled: true}, OpenAI: config.OpenAIConfig{Enabled: true},
 				},
 			},
 		},
@@ -484,9 +482,9 @@ func TestHTTPRequestResponseToSpan_OpenAIEmbeddingDetectedByOpenAISpan(t *testin
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Header: http.Header{
-			"Content-Type":       []string{"application/json"},
-			"Openai-Version":     []string{"2020-10-01"},
+			"Content-Type":        []string{"application/json"},
 			"Openai-Organization": []string{"org-123"},
+			"Openai-Version":      []string{"2020-10-01"},
 		},
 		Body: io.NopCloser(strings.NewReader(respBody)),
 	}
