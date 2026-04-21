@@ -97,13 +97,15 @@ const (
 	HTTPSubtypeGemini        = 8  // http + Google AI Studio (Gemini)
 	HTTPSubtypeJSONRPC       = 9  // http + JSON-RPC
 	HTTPSubtypeAWSBedrock    = 10 // http + AWS Bedrock
+	HTTPSubtypeEmbedding     = 11 // http + generic embedding provider (Voyage, Cohere, Jina)
 )
 
 func IsGenAISubtype(subtype int) bool {
 	return subtype == HTTPSubtypeOpenAI ||
 		subtype == HTTPSubtypeAnthropic ||
 		subtype == HTTPSubtypeGemini ||
-		subtype == HTTPSubtypeAWSBedrock
+		subtype == HTTPSubtypeAWSBedrock ||
+		subtype == HTTPSubtypeEmbedding
 }
 
 //nolint:cyclop
@@ -253,6 +255,7 @@ type GenAI struct {
 	Anthropic *VendorAnthropic
 	Gemini    *VendorGemini
 	Bedrock   *VendorBedrock
+	Embedding *VendorEmbedding
 }
 
 type OpenAIUsage struct {
@@ -325,6 +328,7 @@ type OpenAIInput struct {
 	Messages     json.RawMessage `json:"messages"`
 	Items        json.RawMessage `json:"items"`
 	Temperature  float64         `json:"temperature"`
+	Dimensions   int             `json:"dimensions,omitempty"`
 }
 
 func (air *OpenAIInput) GetInput() string {
@@ -615,6 +619,91 @@ type JSONRPC struct {
 	RequestID    string `json:"requestId"`
 	ErrorCode    int    `json:"errorCode,omitempty"`
 	ErrorMessage string `json:"errorMessage,omitempty"`
+}
+
+// Generic embedding provider types (Voyage AI, Cohere, Jina AI)
+
+// EmbeddingOperationName is the canonical operation name for embedding spans.
+const EmbeddingOperationName = "embeddings"
+
+// VendorEmbedding represents a generic embedding API provider such as
+// Voyage AI, Cohere, or Jina AI.
+type VendorEmbedding struct {
+	Provider   string
+	Model      string
+	Input      EmbeddingRequest
+	Output     EmbeddingResponse
+}
+
+// OperationName returns the canonical embedding operation name.
+func (e *VendorEmbedding) OperationName() string {
+	return EmbeddingOperationName
+}
+
+// EmbeddingRequest captures the common fields from embedding API requests.
+type EmbeddingRequest struct {
+	Model      string          `json:"model"`
+	Input      json.RawMessage `json:"input"`
+	Dimensions int             `json:"dimensions,omitempty"`
+	// Cohere uses "texts" instead of "input"
+	Texts      json.RawMessage `json:"texts,omitempty"`
+}
+
+// InputCount returns the number of input texts in the request.
+// It handles both single-string and array-of-strings formats.
+func (r *EmbeddingRequest) InputCount() int {
+	raw := r.Input
+	if len(raw) == 0 {
+		raw = r.Texts
+	}
+	if len(raw) == 0 {
+		return 0
+	}
+	// Array of strings: count elements
+	var arr []json.RawMessage
+	if json.Unmarshal(raw, &arr) == nil {
+		return len(arr)
+	}
+	// Single string
+	return 1
+}
+
+// EmbeddingResponse captures the common fields from embedding API responses.
+type EmbeddingResponse struct {
+	Model string         `json:"model"`
+	Usage EmbeddingUsage `json:"usage"`
+	// Cohere uses meta.billed_units for token counts
+	Meta *CohereResponseMeta `json:"meta,omitempty"`
+}
+
+// EmbeddingUsage captures token usage in embedding responses.
+type EmbeddingUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+// CohereResponseMeta captures Cohere-specific response metadata.
+type CohereResponseMeta struct {
+	BilledUnits *CohereBilledUnits `json:"billed_units,omitempty"`
+}
+
+// CohereBilledUnits captures Cohere token billing information.
+type CohereBilledUnits struct {
+	InputTokens int `json:"input_tokens"`
+}
+
+// GetInputTokens returns the input token count, handling provider-specific formats.
+func (e *VendorEmbedding) GetInputTokens() int {
+	if e.Output.Usage.PromptTokens > 0 {
+		return e.Output.Usage.PromptTokens
+	}
+	if e.Output.Usage.TotalTokens > 0 {
+		return e.Output.Usage.TotalTokens
+	}
+	if e.Output.Meta != nil && e.Output.Meta.BilledUnits != nil {
+		return e.Output.Meta.BilledUnits.InputTokens
+	}
+	return 0
 }
 
 // Span contains the information being submitted by the following nodes in the graph.
@@ -1254,6 +1343,18 @@ func (s *Span) TraceName() string {
 			return "invoke_model"
 		}
 
+		if s.Type == EventTypeHTTPClient && s.SubType == HTTPSubtypeEmbedding && s.GenAI != nil && s.GenAI.Embedding != nil {
+			op := s.GenAI.Embedding.OperationName()
+			model := s.GenAI.Embedding.Model
+			if s.GenAI.Embedding.Input.Model != "" {
+				model = s.GenAI.Embedding.Input.Model
+			}
+			if model != "" {
+				return op + " " + model
+			}
+			return op
+		}
+
 		if s.SubType == HTTPSubtypeJSONRPC && s.JSONRPC != nil {
 			if s.JSONRPC.Method != "" {
 				return s.JSONRPC.Method
@@ -1537,6 +1638,9 @@ func (s *Span) GenAIOperationName() string {
 	if s.GenAI.Bedrock != nil {
 		return "invoke_model"
 	}
+	if s.GenAI.Embedding != nil {
+		return s.GenAI.Embedding.OperationName()
+	}
 	return ""
 }
 
@@ -1556,6 +1660,9 @@ func (s *Span) GenAIProviderName() string {
 	if s.GenAI.Bedrock != nil {
 		return semconv.GenAIProviderNameAWSBedrock.Value.AsString()
 	}
+	if s.GenAI.Embedding != nil {
+		return s.GenAI.Embedding.Provider
+	}
 	return ""
 }
 
@@ -1574,6 +1681,12 @@ func (s *Span) GenAIRequestModel() string {
 	}
 	if s.GenAI.Bedrock != nil {
 		return s.GenAI.Bedrock.Model
+	}
+	if s.GenAI.Embedding != nil {
+		if s.GenAI.Embedding.Input.Model != "" {
+			return s.GenAI.Embedding.Input.Model
+		}
+		return s.GenAI.Embedding.Model
 	}
 	return ""
 }
@@ -1596,6 +1709,12 @@ func (s *Span) GenAIResponseModel() string {
 	}
 	if s.GenAI.Bedrock != nil {
 		return s.GenAI.Bedrock.Model
+	}
+	if s.GenAI.Embedding != nil {
+		if s.GenAI.Embedding.Output.Model != "" {
+			return s.GenAI.Embedding.Output.Model
+		}
+		return s.GenAI.Embedding.Model
 	}
 	return ""
 }

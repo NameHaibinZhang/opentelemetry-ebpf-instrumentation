@@ -77,11 +77,14 @@ type GenAIConfig struct {
 	Gemini GeminiConfig `yaml:"gemini"`
 	// AWS Bedrock payload extraction and parsing
 	Bedrock BedrockConfig `yaml:"bedrock"`
+	// Generic embedding provider (Voyage AI, Cohere, Jina AI) payload extraction and parsing
+	Embedding EmbeddingProviderConfig `yaml:"embedding"`
 }
 
 func (g *GenAIConfig) Enabled() bool {
 	return g.Anthropic.Enabled || g.OpenAI.Enabled ||
-		g.Gemini.Enabled || g.Bedrock.Enabled
+		g.Gemini.Enabled || g.Bedrock.Enabled ||
+		g.Embedding.Enabled
 }
 
 type OpenAIConfig struct {
@@ -102,6 +105,11 @@ type GeminiConfig struct {
 type BedrockConfig struct {
 	// Enable AWS Bedrock payload extraction and parsing
 	Enabled bool `yaml:"enabled" env:"OTEL_EBPF_HTTP_BEDROCK_ENABLED" validate:"boolean"`
+}
+
+type EmbeddingProviderConfig struct {
+	// Enable generic embedding provider (Voyage AI, Cohere, Jina AI) payload extraction and parsing
+	Enabled bool `yaml:"enabled" env:"OTEL_EBPF_HTTP_EMBEDDING_ENABLED" validate:"boolean"`
 }
 
 type JSONRPCConfig struct {
