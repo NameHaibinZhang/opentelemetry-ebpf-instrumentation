@@ -123,6 +123,24 @@ func TestEmbeddingSpan_NotEmbeddingProvider(t *testing.T) {
 	assert.False(t, ok, "should not be detected as embedding provider for unknown host")
 }
 
+func TestEmbeddingSpan_DashScope(t *testing.T) {
+	// DashScope uses /compatible-mode/v1/embeddings with OpenAI-compatible JSON.
+	req := makeRequest(t, http.MethodPost, "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings", jinaRequestBody)
+	resp := makePlainResponse(http.StatusOK, http.Header{
+		"Content-Type": []string{"application/json"},
+	}, jinaResponseBody)
+
+	base := &request.Span{}
+	span, ok := EmbeddingSpan(base, req, resp)
+
+	require.True(t, ok, "should detect DashScope embedding via hostname + path suffix")
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Embedding)
+	assert.Equal(t, request.HTTPSubtypeEmbedding, span.SubType)
+	assert.Equal(t, "dashscope", span.GenAI.Embedding.Provider)
+	assert.Equal(t, "jina-embeddings-v3", span.GenAI.Embedding.Model)
+}
+
 func TestIsEmbeddingProvider(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -143,6 +161,11 @@ func TestIsEmbeddingProvider(t *testing.T) {
 			name:     "Jina AI",
 			url:      "https://api.jina.ai/v1/embeddings",
 			expected: "jina",
+		},
+		{
+			name:     "DashScope",
+			url:      "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
+			expected: "dashscope",
 		},
 		{
 			name:     "unknown host",
