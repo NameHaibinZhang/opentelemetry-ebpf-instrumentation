@@ -629,10 +629,10 @@ const EmbeddingOperationName = "embeddings"
 // VendorEmbedding represents a generic embedding API provider such as
 // Voyage AI, Cohere, or Jina AI.
 type VendorEmbedding struct {
-	Provider   string
-	Model      string
-	Input      EmbeddingRequest
-	Output     EmbeddingResponse
+	Provider string
+	Model    string
+	Input    EmbeddingRequest
+	Output   EmbeddingResponse
 }
 
 // OperationName returns the canonical embedding operation name.
@@ -646,7 +646,7 @@ type EmbeddingRequest struct {
 	Input      json.RawMessage `json:"input"`
 	Dimensions int             `json:"dimensions,omitempty"`
 	// Cohere uses "texts" instead of "input"
-	Texts      json.RawMessage `json:"texts,omitempty"`
+	Texts json.RawMessage `json:"texts,omitempty"`
 }
 
 // InputCount returns the number of input texts in the request.
