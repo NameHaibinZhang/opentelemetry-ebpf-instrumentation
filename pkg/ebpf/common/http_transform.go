@@ -197,7 +197,7 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 		}
 	}
 
-	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.GenAI.Embedding.Enabled {
+	if parseCtx != nil && parseCtx.payloadExtraction.HTTP.GenAI.Embedding.Enabled {
 		span, ok := ebpfhttp.EmbeddingSpan(&httpSpan, req, resp)
 		if ok {
 			return span
