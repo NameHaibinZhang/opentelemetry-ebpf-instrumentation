@@ -14,7 +14,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.opentelemetry.io/obi/internal/test/integration/components/jaeger"
 )
 
@@ -150,8 +149,8 @@ func testPythonMCPInitialize(t *testing.T) {
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
 		resp, err := mcpCall(address, "initialize", 10, map[string]any{
 			"protocolVersion": "2025-03-26",
-			"capabilities":   map[string]any{},
-			"clientInfo":     map[string]any{"name": "TestClient", "version": "1.0"},
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "TestClient", "version": "1.0"},
 		})
 		require.NoError(ct, err)
 		require.Equal(ct, http.StatusOK, resp.StatusCode)
