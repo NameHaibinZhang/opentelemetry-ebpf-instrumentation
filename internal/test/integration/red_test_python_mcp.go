@@ -66,10 +66,11 @@ func testPythonMCPServer(t *testing.T) {
 		require.GreaterOrEqual(ct, len(traces), 1)
 
 		lastTrace := traces[len(traces)-1]
-		require.GreaterOrEqual(ct, len(lastTrace.Spans), 1)
-		span := lastTrace.Spans[0]
-
-		assert.Equal(ct, "execute_tool get-weather", span.OperationName)
+		// The trace may contain child spans ("in queue", "processing");
+		// locate the MCP server span by its expected operation name.
+		res := lastTrace.FindByOperationName("execute_tool get-weather", "server")
+		require.GreaterOrEqual(ct, len(res), 1)
+		span := res[0]
 
 		tag, found := jaeger.FindIn(span.Tags, "mcp.method.name")
 		assert.True(ct, found, "mcp.method.name tag not found")
@@ -116,10 +117,9 @@ func testPythonMCPServer(t *testing.T) {
 		require.GreaterOrEqual(ct, len(traces), 1)
 
 		lastTrace := traces[len(traces)-1]
-		require.GreaterOrEqual(ct, len(lastTrace.Spans), 1)
-		span := lastTrace.Spans[0]
-
-		assert.Equal(ct, "execute_tool nonexistent", span.OperationName)
+		res := lastTrace.FindByOperationName("execute_tool nonexistent", "server")
+		require.GreaterOrEqual(ct, len(res), 1)
+		span := res[0]
 
 		// Span status should be error (MCP JSON-RPC error)
 		tag, found := jaeger.FindIn(span.Tags, "otel.status_code")
@@ -169,10 +169,9 @@ func testPythonMCPInitialize(t *testing.T) {
 		require.GreaterOrEqual(ct, len(traces), 1)
 
 		lastTrace := traces[len(traces)-1]
-		require.GreaterOrEqual(ct, len(lastTrace.Spans), 1)
-		span := lastTrace.Spans[0]
-
-		assert.Equal(ct, "initialize", span.OperationName)
+		res := lastTrace.FindByOperationName("initialize", "server")
+		require.GreaterOrEqual(ct, len(res), 1)
+		span := res[0]
 
 		tag, found := jaeger.FindIn(span.Tags, "mcp.method.name")
 		assert.True(ct, found, "mcp.method.name tag not found")
