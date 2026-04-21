@@ -756,6 +756,16 @@
       },
       "type": "object"
     },
+    "EmbeddingProviderConfig": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable generic embedding provider (Voyage AI, Cohere, Jina AI) payload extraction and parsing",
+          "x-env-var": "OTEL_EBPF_HTTP_EMBEDDING_ENABLED"
+        }
+      },
+      "type": "object"
+    },
     "EnrichmentConfig": {
       "properties": {
         "enabled": {
@@ -849,6 +859,10 @@
         "bedrock": {
           "$ref": "#/$defs/BedrockConfig",
           "description": "AWS Bedrock payload extraction and parsing"
+        },
+        "embedding": {
+          "$ref": "#/$defs/EmbeddingProviderConfig",
+          "description": "Generic embedding provider (Voyage AI, Cohere, Jina AI) payload extraction and parsing"
         },
         "gemini": {
           "$ref": "#/$defs/GeminiConfig",
