@@ -109,14 +109,17 @@ func GeminiSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 	model := extractGeminiModel(req)
 	operation := extractGeminiOperation(req)
 
+	vg := &request.VendorGemini{
+		Input:     parsedRequest,
+		Output:    parsedResponse,
+		Model:     model,
+		Operation: operation,
+	}
+	populateGeminiToolData(vg)
+
 	baseSpan.SubType = request.HTTPSubtypeGemini
 	baseSpan.GenAI = &request.GenAI{
-		Gemini: &request.VendorGemini{
-			Input:     parsedRequest,
-			Output:    parsedResponse,
-			Model:     model,
-			Operation: operation,
-		},
+		Gemini: vg,
 	}
 
 	return *baseSpan, true

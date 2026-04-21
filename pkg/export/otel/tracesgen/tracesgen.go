@@ -343,6 +343,35 @@ func httpEnrichmentAttributes(span *request.Span) []attribute.KeyValue {
 	return attrs
 }
 
+func appendGenAIToolAttributes(
+	attrs []attribute.KeyValue,
+	calls []request.GenAIToolCall,
+	results []request.GenAIToolResult,
+	optionalAttrs map[attr.Name]struct{},
+) []attribute.KeyValue {
+	if len(calls) == 0 && len(results) == 0 {
+		return attrs
+	}
+	name, id := request.GenAIToolSemanticStrings(calls, results)
+	if name != "" {
+		attrs = append(attrs, semconv.GenAIToolName(name))
+	}
+	if id != "" {
+		attrs = append(attrs, semconv.GenAIToolCallID(id))
+	}
+	if _, ok := optionalAttrs[attr.GenAIToolCallArguments]; ok {
+		if s := request.GenAIToolCallArgumentsJSON(calls, results); s != "" {
+			attrs = append(attrs, semconv.GenAIToolCallArgumentsKey.String(s))
+		}
+	}
+	if _, ok := optionalAttrs[attr.GenAIToolCallResult]; ok {
+		if s := request.GenAIToolCallResultJSON(calls, results); s != "" {
+			attrs = append(attrs, semconv.GenAIToolCallResultKey.String(s))
+		}
+	}
+	return attrs
+}
+
 //nolint:cyclop
 func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]struct{}) []attribute.KeyValue {
 	var attrs []attribute.KeyValue
@@ -515,6 +544,7 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Error.Type))
 				attrs = append(attrs, semconv.ErrorMessage(ai.Error.Message))
 			}
+			attrs = appendGenAIToolAttributes(attrs, ai.ToolCalls, ai.ToolResults, optionalAttrs)
 		}
 
 		if span.SubType == request.HTTPSubtypeAnthropic && span.GenAI != nil && span.GenAI.Anthropic != nil {
@@ -551,6 +581,7 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Output.Error.Type))
 				attrs = append(attrs, semconv.ErrorMessage(ai.Output.Error.Message))
 			}
+			attrs = appendGenAIToolAttributes(attrs, ai.ToolCalls, ai.ToolResults, optionalAttrs)
 		}
 
 		if span.SubType == request.HTTPSubtypeGemini && span.GenAI != nil && span.GenAI.Gemini != nil {
@@ -620,6 +651,7 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Output.Error.Status))
 				attrs = append(attrs, semconv.ErrorMessage(ai.Output.Error.Message))
 			}
+			attrs = appendGenAIToolAttributes(attrs, ai.ToolCalls, ai.ToolResults, optionalAttrs)
 		}
 
 		if span.SubType == request.HTTPSubtypeAWSBedrock && span.GenAI != nil && span.GenAI.Bedrock != nil {

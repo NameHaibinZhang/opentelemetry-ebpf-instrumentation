@@ -255,6 +255,20 @@ type GenAI struct {
 	Bedrock   *VendorBedrock
 }
 
+// GenAIToolCall is a tool invocation emitted by the model in an LLM response (issue #1854).
+type GenAIToolCall struct {
+	Name      string
+	CallID    string
+	Arguments json.RawMessage
+}
+
+// GenAIToolResult is a tool execution payload sent back to the model in a follow-up request.
+type GenAIToolResult struct {
+	Name   string
+	CallID string
+	Result json.RawMessage
+}
+
 type OpenAIUsage struct {
 	InputTokens      int `json:"input_tokens"`
 	OutputTokens     int `json:"output_tokens"`
@@ -299,6 +313,8 @@ type VendorOpenAI struct {
 	Items            json.RawMessage `json:"items"`
 	Metadata         json.RawMessage `json:"metadata"`
 	Data             json.RawMessage `json:"data"`
+	ToolCalls        []GenAIToolCall
+	ToolResults      []GenAIToolResult
 }
 
 func (ai *VendorOpenAI) GetOutput() string {
@@ -344,8 +360,10 @@ func (air *OpenAIInput) GetInput() string {
 }
 
 type VendorAnthropic struct {
-	Input  AnthropicRequest
-	Output AnthropicResponse
+	Input       AnthropicRequest
+	Output      AnthropicResponse
+	ToolCalls   []GenAIToolCall
+	ToolResults []GenAIToolResult
 }
 
 type AnthropicRequest struct {
@@ -389,10 +407,12 @@ type AnthropicError struct {
 const DefaultGeminiOperation = "generate_content"
 
 type VendorGemini struct {
-	Input     GeminiRequest
-	Output    GeminiResponse
-	Model     string
-	Operation string
+	Input       GeminiRequest
+	Output      GeminiResponse
+	Model       string
+	Operation   string
+	ToolCalls   []GenAIToolCall
+	ToolResults []GenAIToolResult
 }
 
 type GeminiRequest struct {

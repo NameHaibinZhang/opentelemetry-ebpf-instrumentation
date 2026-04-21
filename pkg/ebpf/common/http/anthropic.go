@@ -84,12 +84,15 @@ func AnthropicSpan(baseSpan *request.Span, req *http.Request, resp *http.Respons
 		}
 	}
 
+	vendor := &request.VendorAnthropic{
+		Input:  parsedRequest,
+		Output: parsedResponse,
+	}
+	populateAnthropicToolData(vendor)
+
 	baseSpan.SubType = request.HTTPSubtypeAnthropic
 	baseSpan.GenAI = &request.GenAI{
-		Anthropic: &request.VendorAnthropic{
-			Input:  parsedRequest,
-			Output: parsedResponse,
-		},
+		Anthropic: vendor,
 	}
 
 	return *baseSpan, true

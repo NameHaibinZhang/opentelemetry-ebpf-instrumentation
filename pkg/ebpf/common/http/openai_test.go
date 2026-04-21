@@ -50,6 +50,24 @@ const responsesResponseBody = `{
 
 const completionsRequestBody = `{"messages":[{"role":"system","content":"You are a helpful travel assistant."},{"role":"user","content":"Plan a 6-day luxury trip to London for 3 people with a $4400 budget."}],"model":"gpt-4o-mini","temperature":1.0}`
 
+const completionsWithToolsResponseBody = `{
+  "id": "chatcmpl-tool",
+  "object": "chat.completion",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "tool_calls": [{
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "get_weather", "arguments": "{\"city\":\"NYC\"}"}
+      }]
+    },
+    "finish_reason": "tool_calls"
+  }],
+  "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+}`
+
 const completionsResponseBody = `{
   "id": "chatcmpl-DBTg5Ms2mJhaAhZ56Wq8QSf2djw3S",
   "object": "chat.completion",
@@ -151,6 +169,24 @@ func TestOpenAISpan_Responses(t *testing.T) {
 	assert.Equal(t, "How do I check if a Python object is an instance of a class?", ai.Request.Input)
 	assert.Equal(t, "You are a coding assistant that talks like a pirate.", ai.Request.Instructions)
 	assert.Equal(t, "gpt-5-mini", ai.Request.Model)
+}
+
+func TestOpenAISpan_ChatCompletionsWithTools(t *testing.T) {
+	req := makeRequest(t, http.MethodPost, "http://api.openai.com/v1/chat/completions",
+		`{"messages":[{"role":"tool","tool_call_id":"call_prev","content":"sunny"}],"model":"gpt-4o-mini"}`)
+	resp := makeGzipResponse(t, http.StatusOK, openAIHeaders(), completionsWithToolsResponseBody)
+
+	base := &request.Span{}
+	span, ok := OpenAISpan(base, req, resp)
+
+	require.True(t, ok)
+	require.Len(t, span.GenAI.OpenAI.ToolCalls, 1)
+	assert.Equal(t, "call_1", span.GenAI.OpenAI.ToolCalls[0].CallID)
+	assert.Equal(t, "get_weather", span.GenAI.OpenAI.ToolCalls[0].Name)
+	assert.JSONEq(t, `{"city":"NYC"}`, string(span.GenAI.OpenAI.ToolCalls[0].Arguments))
+
+	require.Len(t, span.GenAI.OpenAI.ToolResults, 1)
+	assert.Equal(t, "call_prev", span.GenAI.OpenAI.ToolResults[0].CallID)
 }
 
 func TestOpenAISpan_ChatCompletions(t *testing.T) {

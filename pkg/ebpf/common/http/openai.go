@@ -51,6 +51,7 @@ func OpenAISpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 	}
 
 	parsedResponse.Request = parsedRequest
+	populateOpenAIToolData(&parsedResponse, reqB, respB)
 
 	baseSpan.SubType = request.HTTPSubtypeOpenAI
 	baseSpan.GenAI = &request.GenAI{

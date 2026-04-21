@@ -383,7 +383,9 @@ func getDefinitions(
 				attr.GenAIInput:        false,
 				attr.GenAIOutput:       false,
 				attr.GenAIInstructions: false,
-				attr.GenAIMetadata:     false,
+				attr.GenAIMetadata:            false,
+				attr.GenAIToolCallArguments:   false,
+				attr.GenAIToolCallResult:      false,
 			},
 		},
 		GPUCudaKernelLaunchCalls.Section: {

@@ -5,6 +5,7 @@ package otel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -852,6 +853,30 @@ func TestGenerateTracesAttributes(t *testing.T) {
 		ensureTraceAttrNotExists(t, spanAttrs, semconv.GenAIInputMessagesKey)
 		ensureTraceAttrNotExists(t, spanAttrs, semconv.GenAIOutputMessagesKey)
 		ensureTraceAttrNotExists(t, spanAttrs, semconv.GenAISystemInstructionsKey)
+	})
+
+	t.Run("OpenAI span - tool call attributes", func(t *testing.T) {
+		span := makeOpenAISpan(&request.VendorOpenAI{
+			ID:            "resp_abc123",
+			OperationName: "response",
+			ResponseModel: "gpt-5-mini-2025-08-07",
+			Request:       request.OpenAIInput{Model: "gpt-5-mini"},
+			ToolCalls: []request.GenAIToolCall{
+				{Name: "get_weather", CallID: "call_1", Arguments: json.RawMessage(`{"city":"NYC"}`)},
+			},
+		})
+
+		tAttrs := tracesgen.TraceAttributesSelector(&span, map[attr.Name]struct{}{
+			attr.GenAIToolCallArguments: {},
+			attr.GenAIToolCallResult:    {},
+		})
+		traces := tracesgen.GenerateTracesWithAttributes(cache, &span.Service, []attribute.KeyValue{}, hostID, groupFromSpanAndAttributes(&span, tAttrs), reporterName)
+
+		spanAttrs := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Attributes()
+		ensureTraceStrAttr(t, spanAttrs, semconv.GenAIToolNameKey, "get_weather")
+		ensureTraceStrAttr(t, spanAttrs, semconv.GenAIToolCallIDKey, "call_1")
+		ensureTraceStrAttr(t, spanAttrs, semconv.GenAIToolCallArgumentsKey, `{"city":"NYC"}`)
+		ensureTraceAttrNotExists(t, spanAttrs, semconv.GenAIToolCallResultKey)
 	})
 
 	t.Run("OpenAI span - optional GenAIInput enabled", func(t *testing.T) {
