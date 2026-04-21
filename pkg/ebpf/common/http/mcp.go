@@ -121,7 +121,7 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 		}
 	}
 
-	slog.Debug("MCP", "method", rpcReq.Method, "request", string(reqB))
+	slog.Debug("MCP", "method", rpcReq.Method, "session", sessionID)
 
 	result := &request.MCPCall{
 		Method:    rpcReq.Method,
@@ -189,6 +189,10 @@ func parseMCPResponse(data []byte, result *request.MCPCall) {
 
 	var resp mcpResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
+		return
+	}
+
+	if resp.JSONRPC != "2.0" {
 		return
 	}
 
