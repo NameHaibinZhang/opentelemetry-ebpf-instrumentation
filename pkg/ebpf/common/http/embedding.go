@@ -24,12 +24,11 @@ type embeddingHostPattern struct {
 
 // embeddingHostPatterns lists known embedding API hosts and their required
 // URL path suffixes. Matching is performed by hostname suffix and path suffix,
-// which naturally handles path prefixes like DashScope's /compatible-mode/.
+// which naturally handles arbitrary path prefixes before the API suffix.
 var embeddingHostPatterns = []embeddingHostPattern{
 	{"api.voyageai.com", "/v1/embeddings", "voyage"},
 	{"api.cohere.com", "/v2/embed", "cohere"},
 	{"api.jina.ai", "/v1/embeddings", "jina"},
-	{"dashscope.aliyuncs.com", "/v1/embeddings", "dashscope"},
 }
 
 // isEmbeddingProvider checks whether the request targets a known embedding-only
@@ -53,9 +52,9 @@ func isEmbeddingProvider(req *http.Request) string {
 	return ""
 }
 
-// EmbeddingSpan detects embedding API calls to Voyage AI, Cohere, Jina AI,
-// and DashScope based on hostname and URL path matching, and extracts
-// embedding-specific fields into the span.
+// EmbeddingSpan detects embedding API calls to Voyage AI, Cohere, and Jina AI
+// based on hostname and URL path matching, and extracts embedding-specific
+// fields into the span.
 func EmbeddingSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
 	provider := isEmbeddingProvider(req)
 	if provider == "" {

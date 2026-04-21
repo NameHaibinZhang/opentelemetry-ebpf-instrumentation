@@ -411,7 +411,7 @@ func makeBPFInfoWithBuf(buf []uint8) BPFHTTPInfo {
 }
 
 func TestHTTPRequestResponseToSpan_EmbeddingTakesPriorityOverOpenAI(t *testing.T) {
-	// When a DashScope embedding request returns OpenAI-compatible response headers,
+	// When a known embedding provider request returns OpenAI-compatible response headers,
 	// EmbeddingSpan should take priority over OpenAISpan because it matches the
 	// hostname and path of a known embedding provider.
 	parseCtx := &EBPFParseContext{
@@ -430,8 +430,8 @@ func TestHTTPRequestResponseToSpan_EmbeddingTakesPriorityOverOpenAI(t *testing.T
 
 	req := &http.Request{
 		Method: http.MethodPost,
-		URL:    &url.URL{Scheme: "https", Host: "dashscope.aliyuncs.com", Path: "/compatible-mode/v1/embeddings"},
-		Host:   "dashscope.aliyuncs.com",
+		URL:    &url.URL{Scheme: "https", Host: "api.jina.ai", Path: "/v1/embeddings"},
+		Host:   "api.jina.ai",
 		Body:   io.NopCloser(strings.NewReader(reqBody)),
 	}
 	resp := &http.Response{
@@ -450,11 +450,11 @@ func TestHTTPRequestResponseToSpan_EmbeddingTakesPriorityOverOpenAI(t *testing.T
 	span := httpRequestResponseToSpan(parseCtx, event, req, resp)
 
 	assert.Equal(t, request.HTTPSubtypeEmbedding, span.SubType,
-		"DashScope embedding request should be detected as Embedding span, not OpenAI span")
+		"known embedding provider request should be detected as Embedding span, not OpenAI span")
 	require.NotNil(t, span.GenAI)
 	require.NotNil(t, span.GenAI.Embedding, "span.GenAI.Embedding should be set")
 	assert.Nil(t, span.GenAI.OpenAI, "span.GenAI.OpenAI should not be set")
-	assert.Equal(t, "dashscope", span.GenAI.Embedding.Provider)
+	assert.Equal(t, "jina", span.GenAI.Embedding.Provider)
 }
 
 func TestHTTPRequestResponseToSpan_OpenAIEmbeddingDetectedByOpenAISpan(t *testing.T) {
