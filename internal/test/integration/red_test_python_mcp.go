@@ -19,20 +19,29 @@ import (
 )
 
 // mcpCall sends a JSON-RPC 2.0 MCP request over HTTP and returns the response.
-func mcpCall(url, method string, id int, params any) (*http.Response, error) {
-	req := map[string]any{
+// Optional headers are applied as key-value pairs to the outgoing request.
+func mcpCall(url, method string, id int, params any, headers ...string) (*http.Response, error) {
+	reqBody := map[string]any{
 		"jsonrpc": "2.0",
 		"method":  method,
 		"id":      id,
 	}
 	if params != nil {
-		req["params"] = params
+		reqBody["params"] = params
 	}
-	body, err := json.Marshal(req)
+	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, err
 	}
-	return http.Post(url, "application/json", bytes.NewReader(body)) //nolint:noctx
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body)) //nolint:noctx
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for i := 0; i+1 < len(headers); i += 2 {
+		req.Header.Set(headers[i], headers[i+1])
+	}
+	return http.DefaultClient.Do(req)
 }
 
 func testPythonMCPServer(t *testing.T) {
@@ -48,7 +57,8 @@ func testPythonMCPServer(t *testing.T) {
 
 	// Test 1: tools/call with a known tool — verify MCP span attributes.
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
-		resp, err := mcpCall(address, "tools/call", 1, map[string]any{"name": "get-weather"})
+		resp, err := mcpCall(address, "tools/call", 1, map[string]any{"name": "get-weather"},
+			"Mcp-Session-Id", "test-session-42")
 		require.NoError(ct, err)
 		require.Equal(ct, http.StatusOK, resp.StatusCode)
 
@@ -86,7 +96,7 @@ func testPythonMCPServer(t *testing.T) {
 
 		tag, found = jaeger.FindIn(span.Tags, "mcp.session.id")
 		assert.True(ct, found, "mcp.session.id tag not found")
-		assert.NotEmpty(ct, tag.Value)
+		assert.Equal(ct, "test-session-42", tag.Value)
 
 		tag, found = jaeger.FindIn(span.Tags, "jsonrpc.request.id")
 		assert.True(ct, found, "jsonrpc.request.id tag not found")
