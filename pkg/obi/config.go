@@ -172,6 +172,9 @@ var DefaultConfig = Config{
 					Gemini: config.GeminiConfig{
 						Enabled: false,
 					},
+					Qwen: config.QwenConfig{
+						Enabled: false,
+					},
 					Bedrock: config.BedrockConfig{
 						Enabled: false,
 					},

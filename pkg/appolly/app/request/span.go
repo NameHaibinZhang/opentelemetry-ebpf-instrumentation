@@ -97,12 +97,14 @@ const (
 	HTTPSubtypeGemini        = 8  // http + Google AI Studio (Gemini)
 	HTTPSubtypeJSONRPC       = 9  // http + JSON-RPC
 	HTTPSubtypeAWSBedrock    = 10 // http + AWS Bedrock
+	HTTPSubtypeQwen          = 11 // http + Qwen (DashScope)
 )
 
 func IsGenAISubtype(subtype int) bool {
 	return subtype == HTTPSubtypeOpenAI ||
 		subtype == HTTPSubtypeAnthropic ||
 		subtype == HTTPSubtypeGemini ||
+		subtype == HTTPSubtypeQwen ||
 		subtype == HTTPSubtypeAWSBedrock
 }
 
@@ -252,6 +254,7 @@ type GenAI struct {
 	OpenAI    *VendorOpenAI
 	Anthropic *VendorAnthropic
 	Gemini    *VendorGemini
+	Qwen      *VendorOpenAI
 	Bedrock   *VendorBedrock
 }
 
@@ -387,6 +390,8 @@ type AnthropicError struct {
 // DefaultGeminiOperation is the fallback operation name when no operation
 // can be extracted from the URL path.
 const DefaultGeminiOperation = "generate_content"
+
+const QwenProviderName = "alibaba.qwen"
 
 type VendorGemini struct {
 	Input     GeminiRequest
@@ -1051,6 +1056,9 @@ func HTTPSpanStatusCode(span *Span) string {
 				if span.GenAI.Gemini != nil && span.GenAI.Gemini.Output.Error != nil && span.GenAI.Gemini.Output.Error.Status != "" {
 					return StatusCodeError
 				}
+				if span.GenAI.Qwen != nil && span.GenAI.Qwen.Error.Type != "" {
+					return StatusCodeError
+				}
 				if span.GenAI.Bedrock != nil && span.GenAI.Bedrock.Output.ErrorType != "" {
 					return StatusCodeError
 				}
@@ -1245,6 +1253,20 @@ func (s *Span) TraceName() string {
 				return op + " " + model
 			}
 			return op
+		}
+
+		if s.Type == EventTypeHTTPClient && s.SubType == HTTPSubtypeQwen && s.GenAI != nil && s.GenAI.Qwen != nil {
+			name := s.GenAI.Qwen.OperationName
+			if name != "" {
+				switch {
+				case s.GenAI.Qwen.Request.Model != "":
+					return name + " " + s.GenAI.Qwen.Request.Model
+				case s.GenAI.Qwen.ResponseModel != "":
+					return name + " " + s.GenAI.Qwen.ResponseModel
+				default:
+					return name
+				}
+			}
 		}
 
 		if s.Type == EventTypeHTTPClient && s.SubType == HTTPSubtypeAWSBedrock && s.GenAI != nil && s.GenAI.Bedrock != nil {
@@ -1490,6 +1512,10 @@ func (s *Span) GenAIInputTokens() int {
 		return s.GenAI.Gemini.Output.UsageMetadata.PromptTokenCount
 	}
 
+	if s.GenAI.Qwen != nil {
+		return s.GenAI.Qwen.Usage.GetInputTokens()
+	}
+
 	if s.GenAI.Bedrock != nil {
 		return s.GenAI.Bedrock.Output.InputTokens
 	}
@@ -1514,6 +1540,10 @@ func (s *Span) GenAIOutputTokens() int {
 		return s.GenAI.Gemini.Output.UsageMetadata.CandidatesTokenCount
 	}
 
+	if s.GenAI.Qwen != nil {
+		return s.GenAI.Qwen.Usage.GetOutputTokens()
+	}
+
 	if s.GenAI.Bedrock != nil {
 		return s.GenAI.Bedrock.Output.OutputTokens
 	}
@@ -1534,6 +1564,9 @@ func (s *Span) GenAIOperationName() string {
 	if s.GenAI.Gemini != nil {
 		return s.GenAI.Gemini.OperationName()
 	}
+	if s.GenAI.Qwen != nil {
+		return s.GenAI.Qwen.OperationName
+	}
 	if s.GenAI.Bedrock != nil {
 		return "invoke_model"
 	}
@@ -1553,6 +1586,9 @@ func (s *Span) GenAIProviderName() string {
 	if s.GenAI.Gemini != nil {
 		return semconv.GenAIProviderNameGCPGemini.Value.AsString()
 	}
+	if s.GenAI.Qwen != nil {
+		return QwenProviderName
+	}
 	if s.GenAI.Bedrock != nil {
 		return semconv.GenAIProviderNameAWSBedrock.Value.AsString()
 	}
@@ -1571,6 +1607,9 @@ func (s *Span) GenAIRequestModel() string {
 	}
 	if s.GenAI.Gemini != nil {
 		return s.GenAI.Gemini.Model
+	}
+	if s.GenAI.Qwen != nil {
+		return s.GenAI.Qwen.Request.Model
 	}
 	if s.GenAI.Bedrock != nil {
 		return s.GenAI.Bedrock.Model
@@ -1593,6 +1632,12 @@ func (s *Span) GenAIResponseModel() string {
 			return s.GenAI.Gemini.Output.ModelVersion
 		}
 		return s.GenAI.Gemini.Model
+	}
+	if s.GenAI.Qwen != nil {
+		if s.GenAI.Qwen.ResponseModel != "" {
+			return s.GenAI.Qwen.ResponseModel
+		}
+		return s.GenAI.Qwen.Request.Model
 	}
 	if s.GenAI.Bedrock != nil {
 		return s.GenAI.Bedrock.Model
