@@ -222,6 +222,24 @@ func TestMCPSpan_Initialize(t *testing.T) {
 	assert.Equal(t, "initialize", mcp.OperationName())
 }
 
+func TestMCPSpan_InitializeSessionIDFromResponseHeader(t *testing.T) {
+	req := makeRequest(t, http.MethodPost, "http://localhost:8080/mcp", mcpInitializeRequest)
+	headers := mcpHeaders()
+	headers.Set("Mcp-Session-Id", "sess-from-response")
+	resp := makePlainResponse(http.StatusOK, headers, mcpInitializeResponse)
+
+	base := &request.Span{}
+	span, ok := MCPSpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI.MCP)
+
+	mcp := span.GenAI.MCP
+	assert.Equal(t, "initialize", mcp.Method)
+	assert.Equal(t, "sess-from-response", mcp.SessionID)
+	assert.Equal(t, "5", mcp.RequestID)
+}
+
 func TestMCPSpan_ToolsList(t *testing.T) {
 	req := makeRequest(t, http.MethodPost, "http://localhost:8080/mcp", mcpToolsListRequest)
 	req.Header.Set("Mcp-Session-Id", "sess-tools-list")
