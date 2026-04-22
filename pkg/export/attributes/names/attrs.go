@@ -270,7 +270,7 @@ const (
 const (
 	GenAIOperationName = Name(semconv.GenAIOperationNameKey)
 	GenAIProviderName  = Name(semconv.GenAIProviderNameKey)
-	QwenProviderName   = "alibaba.qwen"
+	QwenProviderName   = "qwen"
 	// With GenAI events, it's the first time we have a single event produce two separate metrics: input->tokens, output->tokens.
 	// All of our current metrics have one set of attributes and a value for that. These two attributes are internal and they
 	// map to semconv.GenAITokenTypeKey when they are generated in metrics. The span_getter.go code will generate
