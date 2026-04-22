@@ -156,6 +156,7 @@ func TestQwenSpan_UsesPartialRequestBodyWhenReadFails(t *testing.T) {
 	assert.Equal(t, "chatcmpl-from-header", span.GenAI.Qwen.ID)
 	assert.Equal(t, "qwen-plus", span.GenAI.Qwen.Request.Model)
 }
+ }
 
 func TestQwenSpan_CompatibleModeRealResponseHeaders(t *testing.T) {
 	contentLength := strconv.Itoa(len(qwenCompatibleRequestBody))
@@ -227,6 +228,22 @@ func TestQwenSpan_CompatibleModeQwenHostDetectedByPath(t *testing.T) {
 
 func TestQwenSpan_CompatibleModeLocalhostDetectedByPath(t *testing.T) {
 	req := makeRequest(t, http.MethodPost, "http://localhost:8085/compatible-mode/v1/chat/completions", qwenCompatibleRequestBody)
+	resp := makePlainResponse(http.StatusOK, http.Header{
+		"Content-Type": []string{"application/json"},
+	}, qwenCompatibleResponseBody)
+
+	base := &request.Span{}
+	span, ok := QwenSpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Qwen)
+	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
+	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
+}
+
+func TestQwenSpan_CompatibleModeUnknownHostStillDetectedByPath(t *testing.T) {
+	req := makeRequest(t, http.MethodPost, "http://10.1.2.3:8085/compatible-mode/v1/chat/completions", qwenCompatibleRequestBody)
 	resp := makePlainResponse(http.StatusOK, http.Header{
 		"Content-Type": []string{"application/json"},
 	}, qwenCompatibleResponseBody)

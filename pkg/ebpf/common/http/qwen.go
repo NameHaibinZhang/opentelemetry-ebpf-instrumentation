@@ -32,14 +32,10 @@ func isQwen(respHeader http.Header, req *http.Request) bool {
 	path := req.URL.Path
 	if strings.Contains(path, "/compatible-mode/v1/") ||
 		strings.Contains(path, "/api/v1/services/aigc/") {
-		// Keep path-based fallback to handle truncated/missing response headers.
-		// OATS and local tests call a mock server (e.g. qwen/localhost), so
-		// accept those hosts in addition to the official dashscope domain.
-		host := strings.ToLower(extractHostname(req))
-		return host == "" ||
-			strings.Contains(host, "dashscope") ||
-			strings.Contains(host, "qwen") ||
-			strings.HasPrefix(host, "localhost")
+		// Keep path-based fallback to handle truncated/missing headers.
+		// Host can also be partially captured and become non-empty garbage,
+		// so don't gate detection on host once a DashScope path is observed.
+		return true
 	}
 
 	return false
@@ -105,6 +101,9 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	}
 	if parsedResponse.ResponseModel == "" {
 		parsedResponse.ResponseModel = parsedRequest.Model
+	}
+	if parsedRequest.Model == "" {
+		parsedRequest.Model = parsedResponse.ResponseModel
 	}
 
 	parsedResponse.Request = parsedRequest
