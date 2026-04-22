@@ -53,6 +53,25 @@ func qwenHeaders() http.Header {
 	return h
 }
 
+type partialReadCloser struct {
+	data []byte
+	err  error
+	read bool
+}
+
+func (p *partialReadCloser) Read(dst []byte) (int, error) {
+	if p.read {
+		return 0, io.EOF
+	}
+	p.read = true
+	n := copy(dst, p.data)
+	return n, p.err
+}
+
+func (p *partialReadCloser) Close() error {
+	return nil
+}
+
 func TestQwenSpan_CompatibleMode(t *testing.T) {
 	req := makeRequest(t, http.MethodPost, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", qwenCompatibleRequestBody)
 	resp := makePlainResponse(http.StatusOK, qwenHeaders(), qwenCompatibleResponseBody)
@@ -112,6 +131,30 @@ func TestQwenSpan_IDFallbackFromHeadersWhenBodyMissingID(t *testing.T) {
 	require.NotNil(t, span.GenAI)
 	require.NotNil(t, span.GenAI.Qwen)
 	assert.Equal(t, "chatcmpl-from-header", span.GenAI.Qwen.ID)
+}
+
+func TestQwenSpan_UsesPartialRequestBodyWhenReadFails(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", nil)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = &partialReadCloser{
+		data: []byte(`{"model":"qwen-plus","messages":[{"role":"user","content":"hi"}]`),
+		err:  io.ErrUnexpectedEOF,
+	}
+
+	h := http.Header{}
+	h.Set("Content-Type", "application/json")
+	h.Set("X-DashScope-Request-Id", "chatcmpl-from-header")
+	resp := makePlainResponse(http.StatusOK, h, `{"choices":[]}`)
+
+	base := &request.Span{}
+	span, ok := QwenSpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Qwen)
+	assert.Equal(t, "chatcmpl-from-header", span.GenAI.Qwen.ID)
+	assert.Equal(t, "qwen-plus", span.GenAI.Qwen.Request.Model)
 }
 
 func TestQwenSpan_CompatibleModeRealResponseHeaders(t *testing.T) {

@@ -48,8 +48,11 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	}
 
 	reqB, err := io.ReadAll(req.Body)
-	if err != nil {
+	if err != nil && len(reqB) == 0 {
 		return *baseSpan, false
+	}
+	if err != nil {
+		slog.Debug("failed to fully read Qwen request body", "error", err)
 	}
 	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 
