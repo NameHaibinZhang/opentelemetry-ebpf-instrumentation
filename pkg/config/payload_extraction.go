@@ -75,6 +75,8 @@ type GenAIConfig struct {
 	Anthropic AnthropicConfig `yaml:"anthropic"`
 	// Google AI Studio (Gemini) payload extraction and parsing
 	Gemini GeminiConfig `yaml:"gemini"`
+	// Qwen (DashScope) payload extraction and parsing
+	Qwen QwenConfig `yaml:"qwen"`
 	// AWS Bedrock payload extraction and parsing
 	Bedrock BedrockConfig `yaml:"bedrock"`
 }
