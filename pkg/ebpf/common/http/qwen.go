@@ -9,10 +9,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
 )
+
+var modelFieldRegexp = regexp.MustCompile(`"model"\s*:\s*"([^"]+)"`)
 
 func isQwen(respHeader http.Header, req *http.Request) bool {
 	if respHeader.Get("X-DashScope-Request-Id") != "" {
@@ -66,6 +69,11 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	var parsedRequest request.OpenAIInput
 	if err := json.Unmarshal(reqB, &parsedRequest); err != nil {
 		slog.Debug("failed to parse Qwen request", "error", err)
+	}
+	if parsedRequest.Model == "" {
+		if matches := modelFieldRegexp.FindSubmatch(reqB); len(matches) == 2 {
+			parsedRequest.Model = strings.TrimSpace(string(matches[1]))
+		}
 	}
 
 	var parsedResponse request.VendorOpenAI
