@@ -9,7 +9,11 @@ input:
 interval: 500ms
 expected:
   traces:
-  # Compatible mode chat completion
+  # Compatible mode chat completion (layered checks for easier debugging)
+  - traceql: '{ .gen_ai.provider.name = "qwen" }'
+    equals: chat.completion qwen-plus
+  - traceql: '{ .gen_ai.provider.name = "qwen" && .gen_ai.request.model = "qwen-plus" }'
+    equals: chat.completion qwen-plus
   - traceql: '{ .gen_ai.provider.name = "qwen" && .gen_ai.request.model = "qwen-plus" && .gen_ai.response.id = "chatcmpl-a1ad370d-b4b0-90bb-9a87-a131fd0687d6"}'
     equals: chat.completion qwen-plus
     attributes:
