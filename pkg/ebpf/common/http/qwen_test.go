@@ -98,6 +98,22 @@ func TestQwenSpan_DashScopeGeneration(t *testing.T) {
 	assert.JSONEq(t, `{"text":"eBPF is a kernel programmability technology.","finish_reason":"stop"}`, ai.GetOutput())
 }
 
+func TestQwenSpan_IDFallbackFromHeadersWhenBodyMissingID(t *testing.T) {
+	req := makeRequest(t, http.MethodPost, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", qwenCompatibleRequestBody)
+	resp := makePlainResponse(http.StatusOK, http.Header{
+		"Content-Type":           []string{"application/json"},
+		"X-DashScope-Request-Id": []string{"chatcmpl-from-header"},
+	}, `{"choices":[]}`)
+
+	base := &request.Span{}
+	span, ok := QwenSpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Qwen)
+	assert.Equal(t, "chatcmpl-from-header", span.GenAI.Qwen.ID)
+}
+
 func TestQwenSpan_CompatibleModeRealResponseHeaders(t *testing.T) {
 	contentLength := strconv.Itoa(len(qwenCompatibleRequestBody))
 	rawReq := "POST /compatible-mode/v1/chat/completions HTTP/1.1\r\n" +
