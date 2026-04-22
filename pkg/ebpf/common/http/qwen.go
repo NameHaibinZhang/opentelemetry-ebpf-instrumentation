@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -17,6 +18,22 @@ import (
 )
 
 var modelFieldRegexp = regexp.MustCompile(`"model"\s*:\s*"([^"]+)"`)
+
+func qwenRequestHost(req *http.Request) string {
+	if req == nil {
+		return ""
+	}
+	if req.URL != nil {
+		if h := req.URL.Hostname(); h != "" {
+			return h
+		}
+	}
+	host := req.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
+}
 
 func qwenRequestPath(req *http.Request) string {
 	if req == nil {
@@ -52,7 +69,7 @@ func isQwen(respHeader http.Header, req *http.Request) bool {
 		return true
 	}
 
-	if req == nil || req.URL == nil {
+	if req == nil {
 		return false
 	}
 
@@ -64,7 +81,7 @@ func isQwen(respHeader http.Header, req *http.Request) bool {
 		// so don't gate detection on host once a DashScope path is observed.
 		return true
 	}
-	if strings.Contains(strings.ToLower(extractHostname(req)), "dashscope") {
+	if strings.Contains(strings.ToLower(qwenRequestHost(req)), "dashscope") {
 		// Host-based fallback for cases where URI path is not reconstructed.
 		return true
 	}
