@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -16,6 +17,32 @@ import (
 )
 
 var modelFieldRegexp = regexp.MustCompile(`"model"\s*:\s*"([^"]+)"`)
+
+func qwenRequestPath(req *http.Request) string {
+	if req == nil {
+		return ""
+	}
+	if req.URL != nil {
+		if req.URL.Path != "" {
+			return req.URL.Path
+		}
+		if req.URL.Opaque != "" {
+			if parsed, err := url.Parse(req.URL.Opaque); err == nil && parsed.Path != "" {
+				return parsed.Path
+			}
+			if strings.HasPrefix(req.URL.Opaque, "/") {
+				return req.URL.Opaque
+			}
+		}
+	}
+	if req.RequestURI == "" {
+		return ""
+	}
+	if parsed, err := url.ParseRequestURI(req.RequestURI); err == nil && parsed.Path != "" {
+		return parsed.Path
+	}
+	return req.RequestURI
+}
 
 func isQwen(respHeader http.Header, req *http.Request) bool {
 	if respHeader.Get("X-DashScope-Request-Id") != "" {
@@ -29,12 +56,16 @@ func isQwen(respHeader http.Header, req *http.Request) bool {
 		return false
 	}
 
-	path := req.URL.Path
+	path := qwenRequestPath(req)
 	if strings.Contains(path, "/compatible-mode/v1/") ||
 		strings.Contains(path, "/api/v1/services/aigc/") {
 		// Keep path-based fallback to handle truncated/missing headers.
 		// Host can also be partially captured and become non-empty garbage,
 		// so don't gate detection on host once a DashScope path is observed.
+		return true
+	}
+	if strings.Contains(strings.ToLower(extractHostname(req)), "dashscope") {
+		// Host-based fallback for cases where URI path is not reconstructed.
 		return true
 	}
 
@@ -117,11 +148,11 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 }
 
 func extractQwenOperation(req *http.Request) string {
-	if req == nil || req.URL == nil {
+	if req == nil {
 		return "generation"
 	}
 
-	path := req.URL.Path
+	path := qwenRequestPath(req)
 	switch {
 	case strings.Contains(path, "/chat/completions"):
 		return "chat.completion"

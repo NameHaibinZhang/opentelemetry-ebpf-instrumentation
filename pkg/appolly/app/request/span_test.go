@@ -1432,7 +1432,7 @@ func TestSpan_GenAIProviderName(t *testing.T) {
 			},
 		}
 		result := span.GenAIProviderName()
-		assert.Equal(t, "alibaba.qwen", result)
+		assert.Equal(t, "qwen", result)
 	})
 
 	t.Run("Bedrock present", func(t *testing.T) {
