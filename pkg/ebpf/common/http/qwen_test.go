@@ -302,6 +302,28 @@ func TestQwenSpan_DetectedByDashScopeHostWhenPathUnavailable(t *testing.T) {
 	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
 }
 
+func TestQwenSpan_CompatibleModeDetectedWhenURLNilButRequestURIPresent(t *testing.T) {
+	req := &http.Request{
+		Method:     http.MethodPost,
+		RequestURI: "/compatible-mode/v1/chat/completions",
+		URL:        nil,
+		Body:       io.NopCloser(strings.NewReader(qwenCompatibleRequestBody)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+	}
+	resp := makePlainResponse(http.StatusOK, http.Header{
+		"Content-Type": []string{"application/json"},
+	}, qwenCompatibleResponseBody)
+
+	base := &request.Span{}
+	span, ok := QwenSpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Qwen)
+	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
+	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
+}
+
 func TestQwenSpan_NotQwen(t *testing.T) {
 	req := makeRequest(t, http.MethodPost, "https://api.openai.com/v1/chat/completions", qwenCompatibleRequestBody)
 	resp := makePlainResponse(http.StatusOK, http.Header{
