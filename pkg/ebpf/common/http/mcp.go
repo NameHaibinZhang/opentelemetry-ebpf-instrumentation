@@ -35,6 +35,15 @@ var mcpMethods = map[string]bool{
 	"ping":                               true,
 }
 
+// ambiguousMethods are JSON-RPC method names shared with other protocols
+// (e.g. LSP). These require additional MCP-specific signals beyond the
+// method name alone: either the Mcp-Session-Id header, or (for initialize)
+// the presence of params.protocolVersion.
+var ambiguousMethods = map[string]bool{
+	"initialize": true,
+	"ping":       true,
+}
+
 // mcpSessionHeader is the HTTP header that carries the MCP session identifier.
 const mcpSessionHeader = "Mcp-Session-Id"
 
@@ -122,6 +131,13 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 		if sessionID == "" {
 			return *baseSpan, false
 		}
+	} else if ambiguousMethods[rpcReq.Method] && sessionID == "" {
+		// Generic method names like "initialize" and "ping" are shared
+		// with other JSON-RPC protocols (e.g. LSP). Without the MCP
+		// session header, require an MCP-specific signal in the params.
+		if rpcReq.Method != "initialize" || !hasMCPProtocolVersion(rpcReq.Params) {
+			return *baseSpan, false
+		}
 	}
 
 	slog.Debug("MCP", "method", rpcReq.Method, "session", sessionID)
@@ -151,6 +167,16 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 	}
 
 	return *baseSpan, true
+}
+
+// hasMCPProtocolVersion checks whether the params contain a protocolVersion
+// field, which is specific to MCP's initialize method.
+func hasMCPProtocolVersion(params json.RawMessage) bool {
+	if len(params) == 0 {
+		return false
+	}
+	var p mcpInitializeParams
+	return json.Unmarshal(params, &p) == nil && p.ProtocolVersion != ""
 }
 
 // parseMCPParams extracts method-specific fields from the request params.

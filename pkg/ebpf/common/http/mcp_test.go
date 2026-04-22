@@ -259,6 +259,7 @@ func TestMCPSpan_ToolsList(t *testing.T) {
 
 func TestMCPSpan_Ping(t *testing.T) {
 	req := makeRequest(t, http.MethodPost, "http://localhost:8080/mcp", mcpPingRequest)
+	req.Header.Set("Mcp-Session-Id", "sess-ping")
 	resp := makePlainResponse(http.StatusOK, mcpHeaders(), mcpPingResponse)
 
 	base := &request.Span{}
@@ -269,6 +270,7 @@ func TestMCPSpan_Ping(t *testing.T) {
 
 	mcp := span.GenAI.MCP
 	assert.Equal(t, "ping", mcp.Method)
+	assert.Equal(t, "sess-ping", mcp.SessionID)
 	assert.Equal(t, "7", mcp.RequestID)
 }
 
@@ -318,6 +320,31 @@ func TestMCPSpan_NotMCP_NotJSONRPC2(t *testing.T) {
 	body := `{"method": "tools/call", "params": {"name": "get-weather"}, "id": 1}`
 	req := makeRequest(t, http.MethodPost, "http://localhost:8080/mcp", body)
 	resp := makePlainResponse(http.StatusOK, mcpHeaders(), "{}")
+
+	base := &request.Span{}
+	_, ok := MCPSpan(base, req, resp)
+
+	assert.False(t, ok)
+}
+
+func TestMCPSpan_NotMCP_PingWithoutSession(t *testing.T) {
+	// "ping" is a generic JSON-RPC method shared with other protocols.
+	// Without the Mcp-Session-Id header it must not be classified as MCP.
+	req := makeRequest(t, http.MethodPost, "http://localhost:8080/mcp", mcpPingRequest)
+	resp := makePlainResponse(http.StatusOK, mcpHeaders(), mcpPingResponse)
+
+	base := &request.Span{}
+	_, ok := MCPSpan(base, req, resp)
+
+	assert.False(t, ok)
+}
+
+func TestMCPSpan_NotMCP_InitializeWithoutProtocolVersion(t *testing.T) {
+	// "initialize" without protocolVersion in params and without session
+	// header looks like a generic JSON-RPC initialize (e.g. LSP).
+	body := `{"jsonrpc": "2.0", "method": "initialize", "params": {"capabilities": {}}, "id": 1}`
+	req := makeRequest(t, http.MethodPost, "http://localhost:8080/mcp", body)
+	resp := makePlainResponse(http.StatusOK, mcpHeaders(), `{"jsonrpc":"2.0","result":{},"id":1}`)
 
 	base := &request.Span{}
 	_, ok := MCPSpan(base, req, resp)
