@@ -77,7 +77,7 @@ through language-specific library instrumentation documented later in this file.
 | AWS S3 | All | `CreateBucket`, `DeleteBucket`, `PutObject`, `DeleteObject`, `ListBuckets`, `ListObjects`, `GetObject` | Yes | No | None documented |
 | AWS SQS | All | All | Yes | No | None documented |
 | SQL++ | All | All | Yes | No | None documented |
-| GenAI | All | All | Yes | No | Supported vendors are OpenAI and Anthropic |
+| GenAI | All | All | Yes | No | Supported vendors are OpenAI, Anthropic, Google AI Studio (Gemini), AWS Bedrock, and Qwen (DashScope) |
 
 ## Runtime, Server, And Library Instrumentation
 
