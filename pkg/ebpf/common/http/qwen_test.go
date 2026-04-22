@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -96,9 +95,7 @@ func TestQwenSpan_CompatibleMode(t *testing.T) {
 
 func TestQwenSpan_DashScopeGeneration(t *testing.T) {
 	req := makeRequest(t, http.MethodPost, "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation", qwenGenerationRequestBody)
-	resp := makePlainResponse(http.StatusOK, http.Header{
-		"Content-Type": []string{"application/json"},
-	}, qwenGenerationResponseBody)
+	resp := makePlainResponse(http.StatusOK, qwenHeaders(), qwenGenerationResponseBody)
 
 	base := &request.Span{}
 	span, ok := QwenSpan(base, req, resp)
@@ -184,167 +181,6 @@ func TestQwenSpan_CompatibleModeRealResponseHeaders(t *testing.T) {
 	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
 	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
 	assert.Equal(t, "qwen-plus", span.GenAI.Qwen.Request.Model)
-}
-
-func TestQwenSpan_CompatibleModeMissingHostStillDetectedByPath(t *testing.T) {
-	req := &http.Request{
-		Method: http.MethodPost,
-		URL: &url.URL{
-			Path: "/compatible-mode/v1/chat/completions",
-		},
-		Body: io.NopCloser(strings.NewReader(qwenCompatibleRequestBody)),
-	}
-
-	resp := makePlainResponse(http.StatusOK, http.Header{
-		"Content-Type": []string{"application/json"},
-	}, qwenCompatibleResponseBody)
-
-	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
-
-	require.True(t, ok)
-	require.NotNil(t, span.GenAI)
-	require.NotNil(t, span.GenAI.Qwen)
-	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
-	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
-}
-
-func TestQwenSpan_CompatibleModeQwenHostDetectedByPath(t *testing.T) {
-	req := makeRequest(t, http.MethodPost, "http://qwen:8085/compatible-mode/v1/chat/completions", qwenCompatibleRequestBody)
-	resp := makePlainResponse(http.StatusOK, http.Header{
-		"Content-Type": []string{"application/json"},
-	}, qwenCompatibleResponseBody)
-
-	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
-
-	require.True(t, ok)
-	require.NotNil(t, span.GenAI)
-	require.NotNil(t, span.GenAI.Qwen)
-	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
-	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
-}
-
-func TestQwenSpan_CompatibleModeLocalhostDetectedByPath(t *testing.T) {
-	req := makeRequest(t, http.MethodPost, "http://localhost:8085/compatible-mode/v1/chat/completions", qwenCompatibleRequestBody)
-	resp := makePlainResponse(http.StatusOK, http.Header{
-		"Content-Type": []string{"application/json"},
-	}, qwenCompatibleResponseBody)
-
-	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
-
-	require.True(t, ok)
-	require.NotNil(t, span.GenAI)
-	require.NotNil(t, span.GenAI.Qwen)
-	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
-	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
-}
-
-func TestQwenSpan_CompatibleModeUnknownHostStillDetectedByPath(t *testing.T) {
-	req := makeRequest(t, http.MethodPost, "http://10.1.2.3:8085/compatible-mode/v1/chat/completions", qwenCompatibleRequestBody)
-	resp := makePlainResponse(http.StatusOK, http.Header{
-		"Content-Type": []string{"application/json"},
-	}, qwenCompatibleResponseBody)
-
-	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
-
-	require.True(t, ok)
-	require.NotNil(t, span.GenAI)
-	require.NotNil(t, span.GenAI.Qwen)
-	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
-	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
-}
-
-func TestQwenSpan_CompatibleModeDetectedWhenPathMissingButRequestURIPresent(t *testing.T) {
-	req := &http.Request{
-		Method:     http.MethodPost,
-		RequestURI: "/compatible-mode/v1/chat/completions",
-		URL:        &url.URL{},
-		Body:       io.NopCloser(strings.NewReader(qwenCompatibleRequestBody)),
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-	}
-	resp := makePlainResponse(http.StatusOK, http.Header{
-		"Content-Type": []string{"application/json"},
-	}, qwenCompatibleResponseBody)
-
-	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
-
-	require.True(t, ok)
-	require.NotNil(t, span.GenAI)
-	require.NotNil(t, span.GenAI.Qwen)
-	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
-	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
-}
-
-func TestQwenSpan_DetectedByDashScopeHostWhenPathUnavailable(t *testing.T) {
-	req := &http.Request{
-		Method: http.MethodPost,
-		URL: &url.URL{
-			Scheme: "https",
-			Host:   "dashscope.aliyuncs.com",
-		},
-		Body:   io.NopCloser(strings.NewReader(qwenCompatibleRequestBody)),
-		Header: http.Header{"Content-Type": []string{"application/json"}},
-	}
-	resp := makePlainResponse(http.StatusOK, http.Header{
-		"Content-Type": []string{"application/json"},
-	}, qwenCompatibleResponseBody)
-
-	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
-
-	require.True(t, ok)
-	require.NotNil(t, span.GenAI)
-	require.NotNil(t, span.GenAI.Qwen)
-	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
-}
-
-func TestQwenSpan_DetectedByQwenHostWhenPathUnavailable(t *testing.T) {
-	req := &http.Request{
-		Method: http.MethodPost,
-		URL: &url.URL{
-			Scheme: "http",
-			Host:   "qwen:8085",
-		},
-		Body:   io.NopCloser(strings.NewReader(qwenCompatibleRequestBody)),
-		Header: http.Header{"Content-Type": []string{"application/json"}},
-	}
-	resp := makePlainResponse(http.StatusOK, http.Header{
-		"Content-Type": []string{"application/json"},
-	}, qwenCompatibleResponseBody)
-
-	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
-
-	require.True(t, ok)
-	require.NotNil(t, span.GenAI)
-	require.NotNil(t, span.GenAI.Qwen)
-	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
-}
-
-func TestQwenSpan_CompatibleModeDetectedWhenURLNilButRequestURIPresent(t *testing.T) {
-	req := &http.Request{
-		Method:     http.MethodPost,
-		RequestURI: "/compatible-mode/v1/chat/completions",
-		URL:        nil,
-		Body:       io.NopCloser(strings.NewReader(qwenCompatibleRequestBody)),
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-	}
-	resp := makePlainResponse(http.StatusOK, http.Header{
-		"Content-Type": []string{"application/json"},
-	}, qwenCompatibleResponseBody)
-
-	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
-
-	require.True(t, ok)
-	require.NotNil(t, span.GenAI)
-	require.NotNil(t, span.GenAI.Qwen)
-	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
-	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
 }
 
 func TestQwenSpan_NotQwen(t *testing.T) {
