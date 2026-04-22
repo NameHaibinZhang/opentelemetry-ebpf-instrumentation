@@ -391,8 +391,6 @@ type AnthropicError struct {
 // can be extracted from the URL path.
 const DefaultGeminiOperation = "generate_content"
 
-const QwenProviderName = "alibaba.qwen"
-
 type VendorGemini struct {
 	Input     GeminiRequest
 	Output    GeminiResponse
@@ -1587,7 +1585,7 @@ func (s *Span) GenAIProviderName() string {
 		return semconv.GenAIProviderNameGCPGemini.Value.AsString()
 	}
 	if s.GenAI.Qwen != nil {
-		return QwenProviderName
+		return attr.QwenProviderName
 	}
 	if s.GenAI.Bedrock != nil {
 		return semconv.GenAIProviderNameAWSBedrock.Value.AsString()
