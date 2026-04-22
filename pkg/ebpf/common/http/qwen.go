@@ -26,14 +26,16 @@ func isQwen(respHeader http.Header, req *http.Request) bool {
 		return false
 	}
 
-	host := strings.ToLower(extractHostname(req))
-	if !strings.Contains(host, "dashscope") {
-		return false
+	path := req.URL.Path
+	if strings.Contains(path, "/compatible-mode/v1/") ||
+		strings.Contains(path, "/api/v1/services/aigc/") {
+		// Keep path-based fallback to handle truncated/missing Host headers
+		// from partial captures while still matching known DashScope routes.
+		host := strings.ToLower(extractHostname(req))
+		return host == "" || strings.Contains(host, "dashscope")
 	}
 
-	path := req.URL.Path
-	return strings.Contains(path, "/compatible-mode/v1/") ||
-		strings.Contains(path, "/api/v1/services/aigc/")
+	return false
 }
 
 func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
