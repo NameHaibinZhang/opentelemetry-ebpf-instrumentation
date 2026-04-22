@@ -90,6 +90,9 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 	}
 
 	sessionID := req.Header.Get(mcpSessionHeader)
+	if sessionID == "" && resp != nil && resp.Header != nil {
+		sessionID = resp.Header.Get(mcpSessionHeader)
+	}
 
 	reqB, err := io.ReadAll(req.Body)
 	if err != nil {
