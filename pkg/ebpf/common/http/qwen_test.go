@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -98,10 +99,12 @@ func TestQwenSpan_DashScopeGeneration(t *testing.T) {
 }
 
 func TestQwenSpan_CompatibleModeRealResponseHeaders(t *testing.T) {
+	contentLength := strconv.Itoa(len(qwenCompatibleRequestBody))
 	rawReq := "POST /compatible-mode/v1/chat/completions HTTP/1.1\r\n" +
 		"Host: dashscope.aliyuncs.com\r\n" +
 		"Content-Type: application/json\r\n" +
 		"Authorization: Bearer test-token\r\n" +
+		"Content-Length: " + contentLength + "\r\n" +
 		"\r\n" +
 		qwenCompatibleRequestBody
 	req, err := http.ReadRequest(bufio.NewReader(strings.NewReader(rawReq)))
