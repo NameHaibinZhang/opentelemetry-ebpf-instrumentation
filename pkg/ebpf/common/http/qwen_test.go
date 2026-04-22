@@ -302,6 +302,29 @@ func TestQwenSpan_DetectedByDashScopeHostWhenPathUnavailable(t *testing.T) {
 	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
 }
 
+func TestQwenSpan_DetectedByQwenHostWhenPathUnavailable(t *testing.T) {
+	req := &http.Request{
+		Method: http.MethodPost,
+		URL: &url.URL{
+			Scheme: "http",
+			Host:   "qwen:8085",
+		},
+		Body:   io.NopCloser(strings.NewReader(qwenCompatibleRequestBody)),
+		Header: http.Header{"Content-Type": []string{"application/json"}},
+	}
+	resp := makePlainResponse(http.StatusOK, http.Header{
+		"Content-Type": []string{"application/json"},
+	}, qwenCompatibleResponseBody)
+
+	base := &request.Span{}
+	span, ok := QwenSpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Qwen)
+	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
+}
+
 func TestQwenSpan_CompatibleModeDetectedWhenURLNilButRequestURIPresent(t *testing.T) {
 	req := &http.Request{
 		Method:     http.MethodPost,

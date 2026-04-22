@@ -81,7 +81,8 @@ func isQwen(respHeader http.Header, req *http.Request) bool {
 		// so don't gate detection on host once a DashScope path is observed.
 		return true
 	}
-	if strings.Contains(strings.ToLower(qwenRequestHost(req)), "dashscope") {
+	host := strings.ToLower(qwenRequestHost(req))
+	if strings.Contains(host, "dashscope") || host == "qwen" || host == "localhost" {
 		// Host-based fallback for cases where URI path is not reconstructed.
 		return true
 	}
