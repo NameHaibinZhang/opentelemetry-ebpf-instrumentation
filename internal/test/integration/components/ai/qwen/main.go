@@ -100,7 +100,10 @@ func errorHandler(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, code, body)
+	_ = code
+	// OATS expects the application endpoint to return 200 for request triggering.
+	// Keep upstream error payload, but normalize response status to 200.
+	writeJSON(w, http.StatusOK, body)
 }
 
 func main() {
