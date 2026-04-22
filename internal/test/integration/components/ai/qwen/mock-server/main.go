@@ -56,9 +56,10 @@ const errorResponseBody = `{
   }
 }`
 
-func setQwenHeaders(h http.Header) {
+func setQwenHeaders(h http.Header, requestID string) {
 	h.Set("Content-Type", "application/json")
-	h.Set("X-Request-Id", "a1ad370d-b4b0-90bb-9a87-a131fd0687d6")
+	h.Set("X-Request-Id", requestID)
+	h.Set("X-DashScope-Request-Id", requestID)
 	h.Set("X-Dashscope-Call-Gateway", "true")
 }
 
@@ -87,7 +88,8 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setQwenHeaders(w.Header())
+	const chatResponseID = "chatcmpl-a1ad370d-b4b0-90bb-9a87-a131fd0687d6"
+	setQwenHeaders(w.Header(), chatResponseID)
 	if r.URL.Query().Has("error") {
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, _ = w.Write([]byte(errorResponseBody))
@@ -123,7 +125,8 @@ func handleGeneration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setQwenHeaders(w.Header())
+	const generationResponseID = "req_abcdef0123456789"
+	setQwenHeaders(w.Header(), generationResponseID)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(generationResponseBody))
 }
