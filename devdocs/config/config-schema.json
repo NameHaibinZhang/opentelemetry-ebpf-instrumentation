@@ -1661,16 +1661,6 @@
       },
       "type": "object"
     },
-    "QwenConfig": {
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "Enable Qwen (DashScope) payload extraction and parsing",
-          "x-env-var": "OTEL_EBPF_HTTP_QWEN_ENABLED"
-        }
-      },
-      "type": "object"
-    },
     "PayloadExtraction": {
       "properties": {
         "http": {
@@ -1767,6 +1757,16 @@
       },
       "type": "object",
       "description": "TODO: TLS"
+    },
+    "QwenConfig": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable Qwen (DashScope) payload extraction and parsing",
+          "x-env-var": "OTEL_EBPF_HTTP_QWEN_ENABLED"
+        }
+      },
+      "type": "object"
     },
     "RedisDBCacheConfig": {
       "properties": {
