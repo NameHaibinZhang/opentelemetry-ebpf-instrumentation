@@ -156,7 +156,6 @@ func TestQwenSpan_UsesPartialRequestBodyWhenReadFails(t *testing.T) {
 	assert.Equal(t, "chatcmpl-from-header", span.GenAI.Qwen.ID)
 	assert.Equal(t, "qwen-plus", span.GenAI.Qwen.Request.Model)
 }
- }
 
 func TestQwenSpan_CompatibleModeRealResponseHeaders(t *testing.T) {
 	contentLength := strconv.Itoa(len(qwenCompatibleRequestBody))
