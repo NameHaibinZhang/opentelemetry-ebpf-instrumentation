@@ -624,15 +624,15 @@ func (b *VendorBedrock) GetStopReason() string {
 
 // MCPCall holds parsed data from a Model Context Protocol request/response.
 type MCPCall struct {
-	Method       string `json:"method"`                 // mcp.method.name
-	ToolName     string `json:"toolName,omitempty"`     // gen_ai.tool.name (tools/call)
-	ResourceURI  string `json:"resourceUri,omitempty"`  // mcp.resource.uri (resources/read)
-	PromptName   string `json:"promptName,omitempty"`   // gen_ai.prompt.name (prompts/get)
-	SessionID    string `json:"sessionId,omitempty"`    // mcp.session.id
-	ProtocolVer  string `json:"protocolVer,omitempty"`  // mcp.protocol.version
-	RequestID    string `json:"requestId,omitempty"`    // jsonrpc.request.id
-	ErrorCode    int    `json:"errorCode,omitempty"`    // JSON-RPC error code
-	ErrorMessage string `json:"errorMessage,omitempty"` // JSON-RPC error message
+	Method       string `json:"method"`
+	ToolName     string `json:"toolName,omitempty"`
+	ResourceURI  string `json:"resourceUri,omitempty"`
+	PromptName   string `json:"promptName,omitempty"`
+	SessionID    string `json:"sessionId,omitempty"`
+	ProtocolVer  string `json:"protocolVer,omitempty"`
+	RequestID    string `json:"requestId,omitempty"`
+	ErrorCode    int    `json:"errorCode,omitempty"`
+	ErrorMessage string `json:"errorMessage,omitempty"`
 }
 
 // OperationName returns the GenAI operation name for the MCP method.

@@ -44,11 +44,68 @@ func mcpCall(url, method string, id int, params any, headers ...string) (*http.R
 	return http.DefaultClient.Do(req)
 }
 
+// mcpNotify sends a JSON-RPC 2.0 notification (no id, no response expected).
+func mcpNotify(url, method string, params any, headers ...string) error {
+	reqBody := map[string]any{
+		"jsonrpc": "2.0",
+		"method":  method,
+	}
+	if params != nil {
+		reqBody["params"] = params
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body)) //nolint:noctx
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for i := 0; i+1 < len(headers); i += 2 {
+		req.Header.Set(headers[i], headers[i+1])
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
+// mcpInitSession performs the MCP initialization handshake and returns the
+// session ID assigned by the server. It retries until the server is ready.
+func mcpInitSession(t *testing.T, address string) string {
+	t.Helper()
+	var sessionID string
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		resp, err := mcpCall(address, "initialize", 0, map[string]any{
+			"protocolVersion": "2025-03-26",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "TestClient", "version": "1.0"},
+		})
+		require.NoError(ct, err)
+		require.Equal(ct, http.StatusOK, resp.StatusCode)
+		sessionID = resp.Header.Get("Mcp-Session-Id")
+		require.NotEmpty(ct, sessionID, "server must return Mcp-Session-Id header")
+		resp.Body.Close()
+	}, testTimeout, 100*time.Millisecond)
+
+	// Complete the initialization handshake.
+	require.NoError(t, mcpNotify(address, "notifications/initialized", nil,
+		"Mcp-Session-Id", sessionID))
+
+	return sessionID
+}
+
 func testPythonMCPServer(t *testing.T) {
 	const (
 		comm    = "python3.14"
 		address = "http://localhost:8381/mcp"
 	)
+
+	// Establish a real MCP session via the SDK initialization handshake.
+	sessionID := mcpInitSession(t, address)
 
 	var tq jaeger.TracesQuery
 	params := neturl.Values{}
@@ -58,7 +115,7 @@ func testPythonMCPServer(t *testing.T) {
 	// Test 1: tools/call with a known tool — verify MCP span attributes.
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
 		resp, err := mcpCall(address, "tools/call", 1, map[string]any{"name": "get-weather"},
-			"Mcp-Session-Id", "test-session-42")
+			"Mcp-Session-Id", sessionID)
 		require.NoError(ct, err)
 		require.Equal(ct, http.StatusOK, resp.StatusCode)
 
@@ -82,31 +139,26 @@ func testPythonMCPServer(t *testing.T) {
 		require.GreaterOrEqual(ct, len(res), 1)
 		span := res[0]
 
-		tag, found := jaeger.FindIn(span.Tags, "mcp.method.name")
-		assert.True(ct, found, "mcp.method.name tag not found")
-		assert.Equal(ct, "tools/call", tag.Value)
+		sd := span.Diff(
+			jaeger.Tag{Key: "mcp.method.name", Type: "string", Value: "tools/call"},
+			jaeger.Tag{Key: "gen_ai.operation.name", Type: "string", Value: "execute_tool"},
+			jaeger.Tag{Key: "gen_ai.tool.name", Type: "string", Value: "get-weather"},
+			jaeger.Tag{Key: "jsonrpc.request.id", Type: "string", Value: "1"},
+		)
+		assert.Empty(ct, sd, sd.String())
 
-		tag, found = jaeger.FindIn(span.Tags, "gen_ai.operation.name")
-		assert.True(ct, found, "gen_ai.operation.name tag not found")
-		assert.Equal(ct, "execute_tool", tag.Value)
-
-		tag, found = jaeger.FindIn(span.Tags, "gen_ai.tool.name")
-		assert.True(ct, found, "gen_ai.tool.name tag not found")
-		assert.Equal(ct, "get-weather", tag.Value)
-
-		tag, found = jaeger.FindIn(span.Tags, "mcp.session.id")
-		assert.True(ct, found, "mcp.session.id tag not found")
-		assert.Equal(ct, "test-session-42", tag.Value)
-
-		tag, found = jaeger.FindIn(span.Tags, "jsonrpc.request.id")
-		assert.True(ct, found, "jsonrpc.request.id tag not found")
-		assert.Equal(ct, "1", tag.Value)
+		// Session ID is dynamically assigned; verify it is present.
+		sd = span.DiffAsRegexp(
+			jaeger.Tag{Key: "mcp.session.id", Type: "string", Value: ".+"},
+		)
+		assert.Empty(ct, sd, sd.String())
 	}, testTimeout, 100*time.Millisecond)
 
 	// Test 2: tools/call with an unknown tool — verify MCP error span attributes.
 	var tqErr jaeger.TracesQuery
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
-		resp, err := mcpCall(address, "tools/call", 2, map[string]any{"name": "nonexistent"})
+		resp, err := mcpCall(address, "tools/call", 2, map[string]any{"name": "nonexistent"},
+			"Mcp-Session-Id", sessionID)
 		require.NoError(ct, err)
 		require.Equal(ct, http.StatusOK, resp.StatusCode)
 
@@ -131,18 +183,15 @@ func testPythonMCPServer(t *testing.T) {
 		require.GreaterOrEqual(ct, len(res), 1)
 		span := res[0]
 
-		// Span status should be error (MCP JSON-RPC error)
-		tag, found := jaeger.FindIn(span.Tags, "otel.status_code")
-		assert.True(ct, found, "otel.status_code tag not found")
-		assert.Equal(ct, "ERROR", tag.Value)
+		sd := span.Diff(
+			jaeger.Tag{Key: "otel.status_code", Type: "string", Value: "ERROR"},
+		)
+		assert.Empty(ct, sd, sd.String())
 
-		tag, found = jaeger.FindIn(span.Tags, "rpc.response.status_code")
-		assert.True(ct, found, "rpc.response.status_code tag not found")
-		assert.Equal(ct, "-32602", tag.Value)
-
-		tag, found = jaeger.FindIn(span.Tags, "error.message")
-		assert.True(ct, found, "error.message tag not found")
-		assert.Contains(ct, tag.Value.(string), "Unknown tool")
+		sd = span.DiffAsRegexp(
+			jaeger.Tag{Key: "error.message", Type: "string", Value: ".*Unknown tool.*"},
+		)
+		assert.Empty(ct, sd, sd.String())
 	}, testTimeout, 100*time.Millisecond)
 }
 
@@ -183,20 +232,12 @@ func testPythonMCPInitialize(t *testing.T) {
 		require.GreaterOrEqual(ct, len(res), 1)
 		span := res[0]
 
-		tag, found := jaeger.FindIn(span.Tags, "mcp.method.name")
-		assert.True(ct, found, "mcp.method.name tag not found")
-		assert.Equal(ct, "initialize", tag.Value)
-
-		tag, found = jaeger.FindIn(span.Tags, "gen_ai.operation.name")
-		assert.True(ct, found, "gen_ai.operation.name tag not found")
-		assert.Equal(ct, "initialize", tag.Value)
-
-		tag, found = jaeger.FindIn(span.Tags, "mcp.protocol.version")
-		assert.True(ct, found, "mcp.protocol.version tag not found")
-		assert.Equal(ct, "2025-03-26", tag.Value)
-
-		tag, found = jaeger.FindIn(span.Tags, "jsonrpc.request.id")
-		assert.True(ct, found, "jsonrpc.request.id tag not found")
-		assert.Equal(ct, "10", tag.Value)
+		sd := span.Diff(
+			jaeger.Tag{Key: "mcp.method.name", Type: "string", Value: "initialize"},
+			jaeger.Tag{Key: "gen_ai.operation.name", Type: "string", Value: "initialize"},
+			jaeger.Tag{Key: "mcp.protocol.version", Type: "string", Value: "2025-03-26"},
+			jaeger.Tag{Key: "jsonrpc.request.id", Type: "string", Value: "10"},
+		)
+		assert.Empty(ct, sd, sd.String())
 	}, testTimeout, 100*time.Millisecond)
 }

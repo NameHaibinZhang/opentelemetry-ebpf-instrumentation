@@ -42,27 +42,17 @@ var mcpMethods = map[string]struct{}{
 // here only need to handle the no-session-header case.
 var ambiguousMethods = map[string]func(json.RawMessage) bool{
 	"initialize": hasMCPProtocolVersion,
-	"ping":       func(json.RawMessage) bool { return false },
+}
+
+// sessionOnlyMethods lists MCP method names that overlap with other JSON-RPC
+// protocols and have no distinguishing params. These are only classified as
+// MCP when the Mcp-Session-Id header is present.
+var sessionOnlyMethods = map[string]struct{}{
+	"ping": {},
 }
 
 // mcpSessionHeader is the HTTP header that carries the MCP session identifier.
 const mcpSessionHeader = "Mcp-Session-Id"
-
-// mcpRequest is the JSON-RPC 2.0 request envelope used by MCP.
-type mcpRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Method  string          `json:"method"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
-
-// mcpResponse is the JSON-RPC 2.0 response envelope used by MCP.
-type mcpResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *jsonRPCError   `json:"error,omitempty"`
-}
 
 // Param structures for extracting method-specific fields.
 
@@ -105,22 +95,8 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 	}
 	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 
-	reqB = bytes.TrimSpace(reqB)
-	// NOTE: JSON-RPC 2.0 also permits batch requests (arrays), but MCP
-	// batch support is not implemented yet. Only single-object requests
-	// are handled here; batch requests fall through to the generic
-	// JSON-RPC parser in jsonrpc.go.
-	if len(reqB) == 0 || reqB[0] != '{' {
-		return *baseSpan, false
-	}
-
-	var rpcReq mcpRequest
-	if err := json.Unmarshal(reqB, &rpcReq); err != nil {
-		return *baseSpan, false
-	}
-
-	// MCP requires JSON-RPC 2.0.
-	if rpcReq.JSONRPC != "2.0" {
+	rpcReq, err := parseJSONRPCRequest(reqB, false)
+	if err != nil {
 		return *baseSpan, false
 	}
 
@@ -131,10 +107,14 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 		if sessionID == "" {
 			return *baseSpan, false
 		}
+	} else if _, sessOnly := sessionOnlyMethods[rpcReq.Method]; sessOnly && sessionID == "" {
+		// Method name overlaps with other protocols and has no
+		// distinguishing params — require the session header.
+		return *baseSpan, false
 	} else if disambiguate, ambiguous := ambiguousMethods[rpcReq.Method]; ambiguous && sessionID == "" {
-		// Generic method names like "initialize" and "ping" are shared
-		// with other JSON-RPC protocols (e.g. LSP). Without the MCP
-		// session header, consult the per-method disambiguator.
+		// Generic method names like "initialize" are shared with other
+		// JSON-RPC protocols (e.g. LSP). Without the MCP session header,
+		// consult the per-method disambiguator.
 		if !disambiguate(rpcReq.Params) {
 			return *baseSpan, false
 		}
@@ -180,7 +160,7 @@ func hasMCPProtocolVersion(params json.RawMessage) bool {
 }
 
 // parseMCPParams extracts method-specific fields from the request params.
-func parseMCPParams(rpcReq mcpRequest, result *request.MCPCall) {
+func parseMCPParams(rpcReq jsonRPCRequest, result *request.MCPCall) {
 	if len(rpcReq.Params) == 0 {
 		return
 	}
@@ -216,7 +196,7 @@ func parseMCPResponse(data []byte, result *request.MCPCall) {
 		return
 	}
 
-	var resp mcpResponse
+	var resp jsonRPCResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return
 	}
