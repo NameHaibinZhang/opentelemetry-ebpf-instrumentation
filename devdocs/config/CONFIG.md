@@ -263,6 +263,12 @@ HTTPParsingPolicy defines the default action for http enrichment rules.
 |---|---|---|---|---|---|---|
 | `ebpf.payload_extraction.http.genai.openai.enabled` | `boolean` | `OTEL_EBPF_HTTP_OPENAI_ENABLED` | `false` |  |  | Enable OpenAI payload extraction and parsing |
 
+#### `ebpf.payload_extraction.http.genai.qwen`
+
+| YAML Path | Type | Env Var | Default | Values | Deprecated | Description |
+|---|---|---|---|---|---|---|
+| `ebpf.payload_extraction.http.genai.qwen.enabled` | `boolean` | `OTEL_EBPF_HTTP_QWEN_ENABLED` | `false` |  |  | Enable Qwen (DashScope) payload extraction and parsing |
+
 #### `ebpf.payload_extraction.http.graphql`
 
 | YAML Path | Type | Env Var | Default | Values | Deprecated | Description |
