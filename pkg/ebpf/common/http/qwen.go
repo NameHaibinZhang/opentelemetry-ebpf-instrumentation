@@ -90,21 +90,21 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	}
 
 	if parsedResponse.ID == "" {
-		// Prefer response headers when body capture is partial/truncated.
-		for _, headerName := range []string{"X-DashScope-Request-Id", "X-Request-Id"} {
-			if headerValue := strings.TrimSpace(resp.Header.Get(headerName)); headerValue != "" {
-				parsedResponse.ID = headerValue
-				break
-			}
-		}
-	}
-
-	if parsedResponse.ID == "" {
 		var responseID struct {
 			RequestID string `json:"request_id"`
 		}
 		if err := json.Unmarshal(respB, &responseID); err == nil {
 			parsedResponse.ID = responseID.RequestID
+		}
+	}
+
+	if parsedResponse.ID == "" {
+		// Fall back to response headers when body capture is partial/truncated.
+		for _, headerName := range []string{"X-DashScope-Request-Id", "X-Request-Id"} {
+			if headerValue := strings.TrimSpace(resp.Header.Get(headerName)); headerValue != "" {
+				parsedResponse.ID = headerValue
+				break
+			}
 		}
 	}
 
