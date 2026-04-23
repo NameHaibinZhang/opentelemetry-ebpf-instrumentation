@@ -9,7 +9,6 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP(
     name="test-mcp-server",
-    version="1.0",
     host="0.0.0.0",
     port=8080,
     streamable_http_path="/mcp",
