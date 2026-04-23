@@ -846,6 +846,10 @@
         "openai": {
           "$ref": "#/$defs/OpenAIConfig",
           "description": "Payload extraction and parsing"
+        },
+        "qwen": {
+          "$ref": "#/$defs/QwenConfig",
+          "description": "(DashScope) payload extraction and parsing"
         }
       },
       "type": "object"
@@ -2036,6 +2040,17 @@
       },
       "type": "object",
       "description": "TODO: TLS"
+    },
+    "QwenConfig": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable Qwen (DashScope) payload extraction and parsing",
+          "default": false,
+          "x-env-var": "OTEL_EBPF_HTTP_QWEN_ENABLED"
+        }
+      },
+      "type": "object"
     },
     "RedisDBCacheConfig": {
       "properties": {
