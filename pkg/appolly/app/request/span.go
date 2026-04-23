@@ -254,8 +254,15 @@ type GenAI struct {
 	OpenAI    *VendorOpenAI
 	Anthropic *VendorAnthropic
 	Gemini    *VendorGemini
-	Qwen      *VendorOpenAI
-	Bedrock   *VendorBedrock
+	// Qwen reuses VendorOpenAI because DashScope's compatible-mode API
+	// returns the same JSON structure as OpenAI.  The native generation
+	// API uses slightly different field names (request_id, output,
+	// input_tokens/output_tokens) but VendorOpenAI already accommodates
+	// both via GetInputTokens()/GetOutputTokens() and the Output field.
+	// A separate field (rather than sharing OpenAI) keeps provider
+	// routing explicit and allows future divergence without refactoring.
+	Qwen    *VendorOpenAI
+	Bedrock *VendorBedrock
 }
 
 type OpenAIUsage struct {
