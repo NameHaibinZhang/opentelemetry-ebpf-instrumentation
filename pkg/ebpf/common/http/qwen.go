@@ -16,7 +16,14 @@ import (
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
 )
 
+// modelFieldRegexp extracts the top-level "model" value from a (possibly
+// truncated) JSON request body.  It is a best-effort fallback used only when
+// json.Unmarshal cannot parse the body.  We limit the search window to
+// modelSearchWindow bytes so that we don't accidentally match a "model"
+// key buried inside a user prompt or message content.
 var modelFieldRegexp = regexp.MustCompile(`"model"\s*:\s*"([^"]+)"`)
+
+const modelSearchWindow = 200
 
 func qwenRequestPath(req *http.Request) string {
 	if req == nil {
@@ -79,7 +86,11 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 		slog.Debug("failed to parse Qwen request", "error", err)
 	}
 	if parsedRequest.Model == "" {
-		if matches := modelFieldRegexp.FindSubmatch(reqB); len(matches) == 2 {
+		window := reqB
+		if len(window) > modelSearchWindow {
+			window = window[:modelSearchWindow]
+		}
+		if matches := modelFieldRegexp.FindSubmatch(window); len(matches) == 2 {
 			parsedRequest.Model = strings.TrimSpace(string(matches[1]))
 		}
 	}
