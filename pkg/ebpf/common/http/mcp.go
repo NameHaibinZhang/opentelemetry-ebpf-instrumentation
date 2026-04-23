@@ -14,34 +14,35 @@ import (
 )
 
 // mcpMethods enumerates known MCP JSON-RPC method names.
-var mcpMethods = map[string]bool{
-	"initialize":                         true,
-	"notifications/initialized":          true,
-	"tools/call":                         true,
-	"tools/list":                         true,
-	"resources/read":                     true,
-	"resources/list":                     true,
-	"resources/subscribe":                true,
-	"resources/unsubscribe":              true,
-	"resources/templates/list":           true,
-	"prompts/get":                        true,
-	"prompts/list":                       true,
-	"completion/complete":                true,
-	"logging/setLevel":                   true,
-	"notifications/cancelled":            true,
-	"notifications/resources/updated":    true,
-	"notifications/tools/list_changed":   true,
-	"notifications/prompts/list_changed": true,
-	"ping":                               true,
+var mcpMethods = map[string]struct{}{
+	"initialize":                         {},
+	"notifications/initialized":          {},
+	"tools/call":                         {},
+	"tools/list":                         {},
+	"resources/read":                     {},
+	"resources/list":                     {},
+	"resources/subscribe":                {},
+	"resources/unsubscribe":              {},
+	"resources/templates/list":           {},
+	"prompts/get":                        {},
+	"prompts/list":                       {},
+	"completion/complete":                {},
+	"logging/setLevel":                   {},
+	"notifications/cancelled":            {},
+	"notifications/resources/updated":    {},
+	"notifications/tools/list_changed":   {},
+	"notifications/prompts/list_changed": {},
+	"ping":                               {},
 }
 
-// ambiguousMethods are JSON-RPC method names shared with other protocols
-// (e.g. LSP). These require additional MCP-specific signals beyond the
-// method name alone: either the Mcp-Session-Id header, or (for initialize)
-// the presence of params.protocolVersion.
-var ambiguousMethods = map[string]bool{
-	"initialize": true,
-	"ping":       true,
+// ambiguousMethods lists JSON-RPC method names shared with other protocols
+// (e.g. LSP). Each entry maps to a disambiguator function that returns true
+// when the request carries an MCP-specific signal beyond the method name.
+// The Mcp-Session-Id header is checked before consulting this map; entries
+// here only need to handle the no-session-header case.
+var ambiguousMethods = map[string]func(json.RawMessage) bool{
+	"initialize": hasMCPProtocolVersion,
+	"ping":       func(json.RawMessage) bool { return false },
 }
 
 // mcpSessionHeader is the HTTP header that carries the MCP session identifier.
@@ -60,12 +61,7 @@ type mcpResponse struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *mcpError       `json:"error,omitempty"`
-}
-
-type mcpError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Error   *jsonRPCError   `json:"error,omitempty"`
 }
 
 // Param structures for extracting method-specific fields.
@@ -110,6 +106,10 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 
 	reqB = bytes.TrimSpace(reqB)
+	// NOTE: JSON-RPC 2.0 also permits batch requests (arrays), but MCP
+	// batch support is not implemented yet. Only single-object requests
+	// are handled here; batch requests fall through to the generic
+	// JSON-RPC parser in jsonrpc.go.
 	if len(reqB) == 0 || reqB[0] != '{' {
 		return *baseSpan, false
 	}
@@ -124,18 +124,18 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 		return *baseSpan, false
 	}
 
-	if !mcpMethods[rpcReq.Method] {
+	if _, known := mcpMethods[rpcReq.Method]; !known {
 		// Not a recognized MCP method. Check whether the session header
 		// was present — that still qualifies the request as MCP even if
 		// the method is unknown (e.g. a custom extension method).
 		if sessionID == "" {
 			return *baseSpan, false
 		}
-	} else if ambiguousMethods[rpcReq.Method] && sessionID == "" {
+	} else if disambiguate, ambiguous := ambiguousMethods[rpcReq.Method]; ambiguous && sessionID == "" {
 		// Generic method names like "initialize" and "ping" are shared
 		// with other JSON-RPC protocols (e.g. LSP). Without the MCP
-		// session header, require an MCP-specific signal in the params.
-		if rpcReq.Method != "initialize" || !hasMCPProtocolVersion(rpcReq.Params) {
+		// session header, consult the per-method disambiguator.
+		if !disambiguate(rpcReq.Params) {
 			return *baseSpan, false
 		}
 	}
