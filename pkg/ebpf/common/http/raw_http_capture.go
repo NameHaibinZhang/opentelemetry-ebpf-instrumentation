@@ -9,16 +9,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/textproto"
 	"strconv"
 	"strings"
+
+	"go.opentelemetry.io/obi/pkg/appolly/app/request"
 )
 
 // TryQwenSpanWithRawResponse attempts Qwen enrichment when net/http failed to
 // parse the response (e.g. malformed chunked framing) but we still have the raw
-// capture. preAccum must already be Finalize()d by the caller if non-nil, or
-// pass a live QwenStreamAccum and it will be finalized here once.
+// capture.
 func TryQwenSpanWithRawResponse(
 	base *request.Span,
 	req *http.Request,
@@ -29,7 +31,7 @@ func TryQwenSpanWithRawResponse(
 		return request.Span{}, false
 	}
 
-	var pre *VendorOpenAI
+	var pre *request.VendorOpenAI
 	if streamAccum != nil {
 		pre = streamAccum.Finalize()
 	}
@@ -63,7 +65,7 @@ func TryQwenSpanWithRawResponse(
 	return span, true
 }
 
-func qwenSpanFromAccumOnly(base *request.Span, req *http.Request, pre *VendorOpenAI) (request.Span, bool) {
+func qwenSpanFromAccumOnly(base *request.Span, req *http.Request, pre *request.VendorOpenAI) (request.Span, bool) {
 	if base == nil || req == nil || pre == nil || !qwenVendorCaptureNonEmpty(pre) {
 		return request.Span{}, false
 	}
@@ -75,7 +77,7 @@ func qwenSpanFromAccumOnly(base *request.Span, req *http.Request, pre *VendorOpe
 	}
 	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 
-	var parsedRequest OpenAIInput
+	var parsedRequest request.OpenAIInput
 	if !unmarshalQwenOpenAIInput(reqB, &parsedRequest) {
 		slog.Debug("Qwen accum-only: failed to parse request")
 	}
@@ -102,14 +104,14 @@ func qwenSpanFromAccumOnly(base *request.Span, req *http.Request, pre *VendorOpe
 		out.Request = parsedRequest
 	}
 
-	base.SubType = HTTPSubtypeQwen
-	base.GenAI = &GenAI{Qwen: &out}
+	base.SubType = request.HTTPSubtypeQwen
+	base.GenAI = &request.GenAI{Qwen: &out}
 	return *base, true
 }
 
 // qwenVendorCaptureNonEmpty reports whether incremental SSE parsing produced
 // anything worth keeping when the HTTP body reader failed.
-func qwenVendorCaptureNonEmpty(v *VendorOpenAI) bool {
+func qwenVendorCaptureNonEmpty(v *request.VendorOpenAI) bool {
 	if v == nil {
 		return false
 	}

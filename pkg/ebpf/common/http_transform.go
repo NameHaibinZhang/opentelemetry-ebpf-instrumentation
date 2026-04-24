@@ -348,7 +348,15 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 	resp, err2 := httpSafeParseResponse(responseBuffer, req)
 	if err != nil || err2 != nil {
 		slog.Debug("error while parsing http request or response, falling back to manual HTTP info parsing", "reqErr", err, "respErr", err2)
-		return httpRequestToSpan(event, requestBuffer), false, nil
+		httpSpan := httpRequestToSpan(event, requestBuffer)
+		if err == nil && isClientEvent(event.Type) && parseCtx != nil &&
+			parseCtx.payloadExtraction.HTTP.GenAI.Qwen.Enabled && responseBuffer != nil {
+			raw := cloneLargeBufferView(responseBuffer)
+			if span, ok := ebpfhttp.TryQwenSpanWithRawResponse(&httpSpan, req, raw, qwenStreamAccum); ok {
+				return span, false, nil
+			}
+		}
+		return httpSpan, false, nil
 	}
 
 	return httpRequestResponseToSpan(parseCtx, event, req, resp, qwenStreamAccum), false, nil
@@ -357,6 +365,13 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 // HTTP response buffers might have been sent incomplete, before the full body.
 // Try to parse the original buffer first, if an EOF is encountered, append an empty
 // body to the buffer and try again.
+func cloneLargeBufferView(lb *largebuf.LargeBuffer) []byte {
+	if lb == nil {
+		return nil
+	}
+	return bytes.Clone(lb.UnsafeView())
+}
+
 func httpSafeParseResponse(responseBuffer *largebuf.LargeBuffer, req *http.Request) (*http.Response, error) {
 	r := responseBuffer.NewReader()
 	rd := bufio.NewReader(&r)

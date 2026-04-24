@@ -92,22 +92,42 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response, st
 	}
 	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 
-	respB, err := getResponseBody(resp)
-	if err != nil && len(respB) == 0 {
-		slog.Debug("Qwen parser response body unavailable; trying strict request-only fallback", "path", path, "error", err)
+	var fromAccum *request.VendorOpenAI
+	if streamAccum != nil {
+		fromAccum = streamAccum.Finalize()
+	}
+
+	respB, errResp := getResponseBody(resp)
+	if len(respB) == 0 && fromAccum != nil && qwenVendorCaptureNonEmpty(fromAccum) {
+		slog.Debug("Qwen: using incremental SSE accumulator (response body empty after read)", "path", path, "readErr", errResp)
+		req.Body = io.NopCloser(bytes.NewBuffer(reqB))
+		return qwenSpanFromAccumOnly(baseSpan, req, fromAccum)
+	}
+
+	if len(respB) == 0 && errResp != nil {
+		slog.Debug("Qwen parser response body unavailable; trying strict request-only fallback", "path", path, "error", errResp)
+		req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 		if fallbackSpan, ok := qwenStreamRequestSpan(baseSpan, req, isSSEContentType(resp.Header.Get("Content-Type"))); ok {
-			if fallbackSpan.GenAI != nil && fallbackSpan.GenAI.Qwen != nil && fallbackSpan.GenAI.Qwen.ID == "" {
-				for _, headerName := range []string{"X-DashScope-Request-Id", "X-Request-Id"} {
-					if headerValue := strings.TrimSpace(resp.Header.Get(headerName)); headerValue != "" {
-						fallbackSpan.GenAI.Qwen.ID = headerValue
-						break
+			if fallbackSpan.GenAI != nil && fallbackSpan.GenAI.Qwen != nil {
+				if fromAccum != nil {
+					merged := mergeQwenVendorSnapshot(fromAccum, fallbackSpan.GenAI.Qwen)
+					if merged != nil {
+						*fallbackSpan.GenAI.Qwen = *merged
+					}
+				}
+				if fallbackSpan.GenAI.Qwen.ID == "" {
+					for _, headerName := range []string{"X-DashScope-Request-Id", "X-Request-Id"} {
+						if headerValue := strings.TrimSpace(resp.Header.Get(headerName)); headerValue != "" {
+							fallbackSpan.GenAI.Qwen.ID = headerValue
+							break
+						}
 					}
 				}
 			}
 			slog.Debug("Qwen parser recovered via strict request-only fallback", "path", path)
 			return fallbackSpan, true
 		}
-		slog.Debug("Qwen parser rejected: response body unavailable", "path", path, "error", err)
+		slog.Debug("Qwen parser rejected: response body unavailable", "path", path, "error", errResp)
 		return *baseSpan, false
 	}
 
@@ -130,10 +150,6 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response, st
 	var parsedResponse request.VendorOpenAI
 	if err := json.Unmarshal(respB, &parsedResponse); err != nil {
 		if isQwenStreamResponse(resp, respB) {
-			var fromAccum *request.VendorOpenAI
-			if streamAccum != nil {
-				fromAccum = streamAccum.Finalize()
-			}
 			fromBuf, streamErr := parseQwenStream(bytes.NewReader(respB))
 			if streamErr != nil {
 				slog.Debug("failed to parse Qwen stream response", "error", streamErr)

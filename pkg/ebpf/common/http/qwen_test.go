@@ -6,6 +6,7 @@ package ebpfcommon
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -199,6 +200,35 @@ func TestQwenStreamAccumIncrementalMatchesFullParse(t *testing.T) {
 	assert.Equal(t, full.Usage.GetInputTokens(), fromAcc.Usage.GetInputTokens())
 	assert.Equal(t, full.Usage.GetOutputTokens(), fromAcc.Usage.GetOutputTokens())
 	assert.Equal(t, full.GetOutput(), fromAcc.GetOutput())
+}
+
+func TestTryQwenSpanWithRawResponse_ChunkedSSE(t *testing.T) {
+	req := makeRequest(t, http.MethodPost, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", qwenCompatibleRequestBody)
+	ev1 := "data: {\"id\":\"cmpl-raw\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\r\n\r\n"
+	ev2 := "data: {\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}\r\n\r\n"
+	var body strings.Builder
+	writeChunk := func(s string) {
+		fmt.Fprintf(&body, "%x\r\n", len(s))
+		body.WriteString(s)
+		body.WriteString("\r\n")
+	}
+	writeChunk(ev1)
+	writeChunk(ev2)
+	body.WriteString("0\r\n\r\n")
+	raw := []byte("HTTP/1.1 200 OK\r\n" +
+		"Content-Type: text/event-stream\r\n" +
+		"Transfer-Encoding: chunked\r\n" +
+		"X-DashScope-Request-Id: raw-chunk-req\r\n" +
+		"\r\n" + body.String())
+
+	base := &request.Span{Type: request.EventTypeHTTPClient}
+	span, ok := TryQwenSpanWithRawResponse(base, req, raw, nil)
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Qwen)
+	assert.Equal(t, 3, span.GenAI.Qwen.Usage.GetInputTokens())
+	assert.Equal(t, 2, span.GenAI.Qwen.Usage.GetOutputTokens())
+	assert.Contains(t, span.GenAI.Qwen.GetOutput(), "hi")
 }
 
 func TestQwenStreamAccumFloatUsageFields(t *testing.T) {
