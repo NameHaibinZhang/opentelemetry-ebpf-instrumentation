@@ -110,8 +110,8 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	slog.Debug("Qwen", "request", string(reqB), "response", string(respB))
 
 	var parsedRequest request.OpenAIInput
-	if err := json.Unmarshal(reqB, &parsedRequest); err != nil {
-		slog.Debug("failed to parse Qwen request", "error", err)
+	if !unmarshalQwenOpenAIInput(reqB, &parsedRequest) {
+		slog.Debug("failed to parse Qwen request")
 	}
 	if parsedRequest.Model == "" {
 		window := reqB
@@ -208,8 +208,8 @@ func qwenStreamRequestSpan(baseSpan *request.Span, req *http.Request, streamHint
 	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 
 	var parsedReq qwenRequestEnvelope
-	if err := json.Unmarshal(reqB, &parsedReq); err != nil {
-		slog.Debug("failed to parse Qwen stream request fallback", "error", err)
+	if !unmarshalQwenRequestEnvelope(reqB, &parsedReq) {
+		slog.Debug("failed to parse Qwen stream request fallback")
 	}
 
 	isStream := streamHint || parsedReq.Stream || streamFieldRegexp.Match(reqB) ||
@@ -459,6 +459,52 @@ func isDashScopeHost(req *http.Request) bool {
 
 func isSSEContentType(contentType string) bool {
 	return strings.Contains(strings.ToLower(contentType), "text/event-stream")
+}
+
+func unmarshalQwenOpenAIInput(raw []byte, out *request.OpenAIInput) bool {
+	if err := json.Unmarshal(raw, out); err == nil {
+		return true
+	}
+	candidate, ok := extractLikelyJSONPayload(raw)
+	if !ok {
+		return false
+	}
+	if err := json.Unmarshal(candidate, out); err == nil {
+		slog.Debug("Qwen request parse recovered from wrapped bytes", "bytes", len(candidate))
+		return true
+	}
+	return false
+}
+
+func unmarshalQwenRequestEnvelope(raw []byte, out *qwenRequestEnvelope) bool {
+	if err := json.Unmarshal(raw, out); err == nil {
+		return true
+	}
+	candidate, ok := extractLikelyJSONPayload(raw)
+	if !ok {
+		return false
+	}
+	if err := json.Unmarshal(candidate, out); err == nil {
+		slog.Debug("Qwen stream request parse recovered from wrapped bytes", "bytes", len(candidate))
+		return true
+	}
+	return false
+}
+
+func extractLikelyJSONPayload(raw []byte) ([]byte, bool) {
+	start := bytes.IndexByte(raw, '{')
+	if start < 0 {
+		return nil, false
+	}
+	end := bytes.LastIndexByte(raw, '}')
+	if end <= start {
+		return nil, false
+	}
+	payload := bytes.TrimSpace(raw[start : end+1])
+	if len(payload) == 0 {
+		return nil, false
+	}
+	return payload, true
 }
 
 func extractQwenOperation(req *http.Request) string {
