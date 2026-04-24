@@ -271,6 +271,13 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 		// Response payload unavailable (e.g. missing large response buffer).
 		// Try strict request-only Qwen stream fallback for client spans.
 		httpSpan := httpRequestToSpan(event, requestBuffer)
+		slog.Debug(
+			"HTTP response payload unavailable; entering request-only fallback path",
+			"traceID", event.Tp.TraceId,
+			"isClient", isClient,
+			"qwenEnabled", parseCtx != nil && parseCtx.payloadExtraction.HTTP.GenAI.Qwen.Enabled,
+			"path", httpSpan.Path,
+		)
 		if isClient &&
 			parseCtx != nil &&
 			parseCtx.payloadExtraction.HTTP.GenAI.Qwen.Enabled {
@@ -278,8 +285,12 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 			req, err := http.ReadRequest(bufio.NewReader(&reqReader))
 			if err == nil {
 				if span, ok := ebpfhttp.QwenStreamRequestSpan(&httpSpan, req); ok {
+					slog.Debug("Qwen request-only fallback matched", "traceID", event.Tp.TraceId, "path", span.Path)
 					return span, false, nil
 				}
+				slog.Debug("Qwen request-only fallback did not match", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
+			} else {
+				slog.Debug("failed to parse request for Qwen request-only fallback", "traceID", event.Tp.TraceId, "error", err)
 			}
 		}
 		return httpSpan, false, nil

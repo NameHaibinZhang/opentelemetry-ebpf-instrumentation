@@ -65,6 +65,13 @@ func isQwen(respHeader http.Header) bool {
 
 func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
 	if !isQwen(resp.Header) {
+		slog.Debug(
+			"Qwen response headers not detected",
+			"path", qwenRequestPath(req),
+			"has_x_dashscope_request_id", resp.Header.Get("X-DashScope-Request-Id") != "",
+			"has_x_dashscope_call_gateway", resp.Header.Get("X-Dashscope-Call-Gateway") != "",
+			"content_type", resp.Header.Get("Content-Type"),
+		)
 		return *baseSpan, false
 	}
 
@@ -158,13 +165,23 @@ type qwenRequestEnvelope struct {
 // QwenStreamRequestSpan is a strict request-only fallback used when
 // response payload is unavailable (e.g. missing large response buffer).
 func QwenStreamRequestSpan(baseSpan *request.Span, req *http.Request) (request.Span, bool) {
-	if req == nil || !isQwenStreamRequestPath(req) {
+	if req == nil {
+		slog.Debug("Qwen stream fallback rejected: nil request")
+		return *baseSpan, false
+	}
+	path := qwenRequestPath(req)
+	if !isQwenStreamRequestPath(req) {
+		slog.Debug("Qwen stream fallback rejected: path not in strict allowlist", "path", path)
 		return *baseSpan, false
 	}
 
 	reqB, err := io.ReadAll(req.Body)
 	if err != nil && len(reqB) == 0 {
+		slog.Debug("Qwen stream fallback rejected: request body unavailable", "path", path, "error", err)
 		return *baseSpan, false
+	}
+	if err != nil {
+		slog.Debug("Qwen stream fallback request body partially read", "path", path, "error", err, "bytes", len(reqB))
 	}
 	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 
@@ -175,6 +192,7 @@ func QwenStreamRequestSpan(baseSpan *request.Span, req *http.Request) (request.S
 
 	isStream := parsedReq.Stream || streamFieldRegexp.Match(reqB)
 	if !isStream {
+		slog.Debug("Qwen stream fallback rejected: request is not stream", "path", path, "model", parsedReq.Model)
 		return *baseSpan, false
 	}
 
@@ -189,6 +207,7 @@ func QwenStreamRequestSpan(baseSpan *request.Span, req *http.Request) (request.S
 	}
 
 	if !strings.HasPrefix(strings.ToLower(parsedReq.Model), "qwen") {
+		slog.Debug("Qwen stream fallback rejected: model is not qwen", "path", path, "model", parsedReq.Model)
 		return *baseSpan, false
 	}
 
@@ -202,6 +221,7 @@ func QwenStreamRequestSpan(baseSpan *request.Span, req *http.Request) (request.S
 	baseSpan.GenAI = &request.GenAI{
 		Qwen: parsedResp,
 	}
+	slog.Debug("Qwen stream fallback accepted", "path", path, "operation", parsedResp.OperationName, "model", parsedResp.ResponseModel)
 
 	return *baseSpan, true
 }
