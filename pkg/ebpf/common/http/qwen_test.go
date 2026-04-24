@@ -5,6 +5,7 @@ package ebpfcommon
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -176,6 +177,37 @@ func TestQwenSpan_DashScopeGenerationSSE(t *testing.T) {
 	assert.Equal(t, 5, ai.Usage.GetInputTokens())
 	assert.Equal(t, 3, ai.Usage.GetOutputTokens())
 	assert.Contains(t, ai.GetOutput(), "Qwen stream")
+}
+
+func TestQwenSpan_StreamResponseBodyUnavailableFallsBackToRequestOnly(t *testing.T) {
+	req := makeRequest(
+		t,
+		http.MethodPost,
+		"https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+		`{"model":"qwen-plus","stream":true,"messages":[{"role":"user","content":"hi"}]}`,
+	)
+	h := qwenHeaders()
+	h.Set("Content-Type", "text/event-stream")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     h,
+		Body: &partialReadCloser{
+			data: nil,
+			err:  errors.New("invalid CR in chunked line"),
+		},
+	}
+
+	base := &request.Span{}
+	span, ok := QwenSpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Qwen)
+	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
+	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
+	assert.Equal(t, "qwen-plus", span.GenAI.Qwen.Request.Model)
+	assert.Equal(t, "qwen-plus", span.GenAI.Qwen.ResponseModel)
+	assert.Equal(t, "req-header", span.GenAI.Qwen.ID)
 }
 
 func TestQwenStreamRequestSpan_StrictFallback(t *testing.T) {

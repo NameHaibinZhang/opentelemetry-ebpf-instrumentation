@@ -88,6 +88,19 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 
 	respB, err := getResponseBody(resp)
 	if err != nil && len(respB) == 0 {
+		slog.Debug("Qwen parser response body unavailable; trying strict request-only fallback", "path", path, "error", err)
+		if fallbackSpan, ok := QwenStreamRequestSpan(baseSpan, req); ok {
+			if fallbackSpan.GenAI != nil && fallbackSpan.GenAI.Qwen != nil && fallbackSpan.GenAI.Qwen.ID == "" {
+				for _, headerName := range []string{"X-DashScope-Request-Id", "X-Request-Id"} {
+					if headerValue := strings.TrimSpace(resp.Header.Get(headerName)); headerValue != "" {
+						fallbackSpan.GenAI.Qwen.ID = headerValue
+						break
+					}
+				}
+			}
+			slog.Debug("Qwen parser recovered via strict request-only fallback", "path", path)
+			return fallbackSpan, true
+		}
 		slog.Debug("Qwen parser rejected: response body unavailable", "path", path, "error", err)
 		return *baseSpan, false
 	}
