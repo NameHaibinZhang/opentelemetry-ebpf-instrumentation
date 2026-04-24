@@ -69,7 +69,7 @@ func TestHTTPRequestResponseToSpanSetsSchemeFromSSLFlag(t *testing.T) {
 				Type: uint8(request.EventTypeHTTP),
 				Ssl:  tc.sslFlag,
 			}
-			span := httpRequestResponseToSpan(nil, event, req, resp)
+			span := httpRequestResponseToSpan(nil, event, req, resp, nil)
 
 			expectedStatement := tc.expectedScheme + request.SchemeHostSeparator + req.Host
 			assert.Equal(t, expectedStatement, span.Statement)
@@ -92,7 +92,7 @@ func TestHTTPRequestResponseToSpanSetsFullPath(t *testing.T) {
 		event := &BPFHTTPInfo{
 			Type: uint8(request.EventTypeHTTPClient),
 		}
-		span := httpRequestResponseToSpan(nil, event, req, resp)
+		span := httpRequestResponseToSpan(nil, event, req, resp, nil)
 
 		assert.Equal(t, "/test", span.Path)
 		assert.Equal(t, "/test?id=1", span.FullPath)
@@ -112,7 +112,7 @@ func TestHTTPRequestResponseToSpanSetsFullPath(t *testing.T) {
 		event := &BPFHTTPInfo{
 			Type: uint8(request.EventTypeHTTPClient),
 		}
-		span := httpRequestResponseToSpan(nil, event, req, resp)
+		span := httpRequestResponseToSpan(nil, event, req, resp, nil)
 
 		assert.Equal(t, "https://api.example.com", span.Path)
 		assert.Equal(t, "https://api.example.com", span.FullPath)

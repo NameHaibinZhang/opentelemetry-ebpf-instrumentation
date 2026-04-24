@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
+	ebpfhttp "go.opentelemetry.io/obi/pkg/ebpf/common/http"
 	"go.opentelemetry.io/obi/pkg/internal/ebpf/ringbuf"
 	"go.opentelemetry.io/obi/pkg/internal/largebuf"
 )
@@ -21,7 +22,24 @@ type largeBufferKey struct {
 const (
 	largeBufferActionInit = iota
 	largeBufferActionAppend
+	// bpf/common/protocol_common.h PACKET_TYPE_RESPONSE
+	tcpPacketTypeResponse uint8 = 2
 )
+
+func feedQwenStreamAccumForChunk(parseCtx *EBPFParseContext, key largeBufferKey, chunk []byte) {
+	if parseCtx == nil || parseCtx.qwenStreamAccumulators == nil || len(chunk) == 0 {
+		return
+	}
+	if key.packetType != tcpPacketTypeResponse {
+		return
+	}
+	acc, ok := parseCtx.qwenStreamAccumulators.Get(key)
+	if !ok {
+		acc = ebpfhttp.NewQwenStreamAccum()
+		parseCtx.qwenStreamAccumulators.Add(key, acc)
+	}
+	_ = acc.Feed(chunk)
+}
 
 func appendTCPLargeBuffer(parseCtx *EBPFParseContext, record *ringbuf.Record) (request.Span, bool, error) {
 	hdrSize := uint32(unsafe.Sizeof(TCPLargeBufferHeader{})) - uint32(unsafe.Sizeof(uintptr(0))) // Remove `buf` placeholder
@@ -55,6 +73,7 @@ func appendTCPLargeBuffer(parseCtx *EBPFParseContext, record *ringbuf.Record) (r
 	switch event.Action {
 	case largeBufferActionInit:
 		initFunc(chunk)
+		feedQwenStreamAccumForChunk(parseCtx, key, chunk)
 	case largeBufferActionAppend:
 		lb, ok := parseCtx.largeBuffers.Get(key)
 		if !ok {
@@ -62,6 +81,7 @@ func appendTCPLargeBuffer(parseCtx *EBPFParseContext, record *ringbuf.Record) (r
 		} else {
 			lb.AppendChunk(chunk)
 		}
+		feedQwenStreamAccumForChunk(parseCtx, key, chunk)
 	default:
 		return request.Span{}, true, fmt.Errorf("invalid large buffer action: %d", event.Action)
 	}
@@ -74,7 +94,10 @@ func extractTCPLargeBuffer(
 	traceID [16]uint8,
 	packetType, direction uint8,
 	connInfo BpfConnectionInfoT,
-) (*largebuf.LargeBuffer, bool) {
+) (*largebuf.LargeBuffer, *ebpfhttp.QwenStreamAccum, bool) {
+	if parseCtx == nil {
+		return nil, nil, false
+	}
 	key := largeBufferKey{
 		traceID:    traceID,
 		packetType: packetType,
@@ -84,10 +107,13 @@ func extractTCPLargeBuffer(
 
 	lb, ok := parseCtx.largeBuffers.Get(key)
 	if !ok {
-		if parseCtx.protocolDebug {
+		if parseCtx != nil && parseCtx.protocolDebug {
 			fmt.Printf("<<< LargeBufferExtract: not found! (packet=%d direction=%d)\n", key.packetType, key.direction)
 		}
-		return nil, false
+		if parseCtx != nil && parseCtx.qwenStreamAccumulators != nil {
+			parseCtx.qwenStreamAccumulators.Remove(key)
+		}
+		return nil, nil, false
 	}
 
 	if parseCtx.protocolDebug {
@@ -95,7 +121,15 @@ func extractTCPLargeBuffer(
 			key.packetType, key.direction, lb.Len(), lb.UnsafeView())
 	}
 
+	var qwenAcc *ebpfhttp.QwenStreamAccum
+	if parseCtx.qwenStreamAccumulators != nil {
+		if acc, okAcc := parseCtx.qwenStreamAccumulators.Get(key); okAcc {
+			parseCtx.qwenStreamAccumulators.Remove(key)
+			qwenAcc = acc
+		}
+	}
+
 	parseCtx.largeBuffers.Remove(key)
 
-	return lb, true
+	return lb, qwenAcc, true
 }

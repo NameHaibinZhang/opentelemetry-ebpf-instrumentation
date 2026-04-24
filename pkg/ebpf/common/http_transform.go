@@ -74,7 +74,7 @@ func httpInfoToSpanLegacy(info *HTTPInfo) request.Span {
 	}
 }
 
-func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, req *http.Request, resp *http.Response) request.Span {
+func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, req *http.Request, resp *http.Response, qwenStreamAccum *ebpfhttp.QwenStreamAccum) request.Span {
 	defer req.Body.Close()
 	defer resp.Body.Close()
 	slog.Debug(
@@ -207,7 +207,7 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 
 	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.GenAI.Qwen.Enabled {
 		slog.Debug("Evaluating Qwen parser", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
-		span, ok := ebpfhttp.QwenSpan(&httpSpan, req, resp)
+		span, ok := ebpfhttp.QwenSpan(&httpSpan, req, resp, qwenStreamAccum)
 		if ok {
 			slog.Debug("Qwen parser matched", "traceID", event.Tp.TraceId, "path", span.Path)
 			return span
@@ -260,8 +260,9 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 
 	slog.Debug("Event", "traceID", event.Tp.TraceId, "conn", event.ConnInfo, "buf", event.Buf[:])
 
+	var qwenStreamAccum *ebpfhttp.QwenStreamAccum
 	if event.HasLargeBuffers == 1 {
-		b, ok := extractTCPLargeBuffer(parseCtx, event.Tp.TraceId, packetTypeRequest, directionByPacketType(packetTypeRequest, isClient), event.ConnInfo)
+		b, _, ok := extractTCPLargeBuffer(parseCtx, event.Tp.TraceId, packetTypeRequest, directionByPacketType(packetTypeRequest, isClient), event.ConnInfo)
 		if ok {
 			requestBuffer = b
 		} else {
@@ -269,9 +270,10 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 			requestBuffer = largebuf.NewLargeBufferFrom(event.Buf[:])
 		}
 
-		b, ok = extractTCPLargeBuffer(parseCtx, event.Tp.TraceId, packetTypeResponse, directionByPacketType(packetTypeResponse, isClient), event.ConnInfo)
+		b, acc, ok := extractTCPLargeBuffer(parseCtx, event.Tp.TraceId, packetTypeResponse, directionByPacketType(packetTypeResponse, isClient), event.ConnInfo)
 		if ok {
 			responseBuffer = b
+			qwenStreamAccum = acc
 			hasResponse = true
 		} else {
 			slog.Debug("missing large buffer for HTTP response", "traceID", event.Tp.TraceId, "conn", event.ConnInfo, "packetType", packetTypeResponse)
@@ -302,6 +304,7 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 		)
 		responseBuffer = nil
 		hasResponse = false
+		qwenStreamAccum = nil
 	}
 
 	if parseCtx != nil && !parseCtx.payloadExtraction.Enabled() {
@@ -348,7 +351,7 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 		return httpRequestToSpan(event, requestBuffer), false, nil
 	}
 
-	return httpRequestResponseToSpan(parseCtx, event, req, resp), false, nil
+	return httpRequestResponseToSpan(parseCtx, event, req, resp, qwenStreamAccum), false, nil
 }
 
 // HTTP response buffers might have been sent incomplete, before the full body.

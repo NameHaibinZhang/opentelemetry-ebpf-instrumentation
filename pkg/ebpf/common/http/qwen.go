@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
+	"go.opentelemetry.io/obi/pkg/config"
 )
 
 // modelFieldRegexp extracts the top-level "model" value from a (possibly
@@ -65,7 +66,10 @@ func isQwen(respHeader http.Header) bool {
 	return false
 }
 
-func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
+// QwenSpan enriches a span for DashScope / Qwen HTTP traffic. streamAccum holds
+// incremental SSE state built from TCP large-buffer ringbuf chunks; pass nil if
+// unavailable (tests and non-instrumented paths).
+func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response, streamAccum *QwenStreamAccum) (request.Span, bool) {
 	path := qwenRequestPath(req)
 	if !isQwen(resp.Header) {
 		slog.Debug(
@@ -126,10 +130,17 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	var parsedResponse request.VendorOpenAI
 	if err := json.Unmarshal(respB, &parsedResponse); err != nil {
 		if isQwenStreamResponse(resp, respB) {
-			if streamResponse, streamErr := parseQwenStream(bytes.NewReader(respB)); streamErr == nil {
-				parsedResponse = *streamResponse
-			} else {
+			var fromAccum *request.VendorOpenAI
+			if streamAccum != nil {
+				fromAccum = streamAccum.Finalize()
+			}
+			fromBuf, streamErr := parseQwenStream(bytes.NewReader(respB))
+			if streamErr != nil {
 				slog.Debug("failed to parse Qwen stream response", "error", streamErr)
+			}
+			merged := mergeQwenVendorSnapshot(fromAccum, fromBuf)
+			if merged != nil {
+				parsedResponse = *merged
 			}
 		} else {
 			slog.Debug("failed to parse Qwen response", "error", err)
@@ -269,18 +280,12 @@ func isQwenStreamResponse(resp *http.Response, respBody []byte) bool {
 }
 
 type qwenStreamChunk struct {
-	ID        string `json:"id"`
-	RequestID string `json:"request_id"`
-	Object    string `json:"object"`
-	Model     string `json:"model"`
-	Usage     struct {
-		InputTokens      int `json:"input_tokens"`
-		OutputTokens     int `json:"output_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-	} `json:"usage"`
-	Output struct {
+	ID        string          `json:"id"`
+	RequestID string          `json:"request_id"`
+	Object    string          `json:"object"`
+	Model     string          `json:"model"`
+	Usage     json.RawMessage `json:"usage"`
+	Output    struct {
 		Text string `json:"text"`
 	} `json:"output"`
 	Choices []struct {
@@ -296,58 +301,214 @@ type qwenStreamChunk struct {
 	Error request.OpenAIError `json:"error"`
 }
 
-func parseQwenStream(reader io.Reader) (*request.VendorOpenAI, error) {
-	scanner := bufio.NewScanner(reader)
-	response := &request.VendorOpenAI{}
-	var outputBuilder strings.Builder
-	var finishReason string
-	var currentData strings.Builder
+// QwenStreamAccum incrementally parses Server-Sent Events (data: lines) from
+// arbitrary byte chunks so token usage and assistant deltas are merged as soon
+// as each complete SSE event is available.
+type QwenStreamAccum struct {
+	carry         []byte
+	currentData   strings.Builder
+	response      request.VendorOpenAI
+	outputBuilder strings.Builder
+	finishReason  string
+	finalized     bool
+}
 
-	processCurrentData := func() error {
-		if currentData.Len() == 0 {
+// NewQwenStreamAccum constructs an empty SSE accumulator.
+func NewQwenStreamAccum() *QwenStreamAccum {
+	return &QwenStreamAccum{}
+}
+
+// Feed ingests one TCP large-buffer chunk (plaintext HTTP response bytes).
+func (a *QwenStreamAccum) Feed(chunk []byte) error {
+	if a == nil || len(chunk) == 0 {
+		return nil
+	}
+	buf := append(append([]byte{}, a.carry...), chunk...)
+	lastNL := bytes.LastIndexByte(buf, '\n')
+	if lastNL < 0 {
+		a.carry = buf
+		return nil
+	}
+	complete := buf[:lastNL+1]
+	a.carry = append([]byte{}, buf[lastNL+1:]...)
+
+	for _, line := range bytes.Split(complete, []byte("\n")) {
+		line = bytes.TrimSuffix(line, []byte("\r"))
+		a.feedLine(string(line))
+	}
+	return nil
+}
+
+// ReadFrom parses a full response body stream (same semantics as Feed).
+func (a *QwenStreamAccum) ReadFrom(r io.Reader) error {
+	if a == nil {
+		return nil
+	}
+	br := bufio.NewReaderSize(r, 64*1024)
+	maxLine := qwenStreamMaxLineBytes()
+	for {
+		line, err := readLimitedLine(br, maxLine)
+		if err != nil && err != io.EOF {
+			return err
+		}
+		line = strings.TrimSuffix(line, "\r")
+		a.feedLine(line)
+		if err == io.EOF {
+			break
+		}
+	}
+	return nil
+}
+
+func (a *QwenStreamAccum) feedLine(line string) {
+	if line == "" {
+		a.flushCurrentData()
+		return
+	}
+	if !strings.HasPrefix(line, "data: ") {
+		return
+	}
+	payload := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
+	if a.currentData.Len() > 0 {
+		a.currentData.WriteByte('\n')
+	}
+	a.currentData.WriteString(payload)
+}
+
+func (a *QwenStreamAccum) flushCurrentData() {
+	if a.currentData.Len() == 0 {
+		return
+	}
+	data := strings.TrimSpace(a.currentData.String())
+	a.currentData.Reset()
+	_ = processQwenStreamData(data, &a.response, &a.outputBuilder, &a.finishReason)
+}
+
+// Finalize flushes partial lines and returns the merged VendorOpenAI snapshot.
+// Call at most once per accumulator.
+func (a *QwenStreamAccum) Finalize() *request.VendorOpenAI {
+	if a == nil || a.finalized {
+		if a == nil {
 			return nil
 		}
-		defer currentData.Reset()
-		return processQwenStreamData(strings.TrimSpace(currentData.String()), response, &outputBuilder, &finishReason)
+		out := a.response
+		a.materializeChoices(&out)
+		return &out
 	}
+	a.finalized = true
+	if len(a.carry) > 0 {
+		rest := strings.TrimSpace(string(bytes.TrimSuffix(a.carry, []byte("\r"))))
+		a.carry = nil
+		if rest != "" {
+			a.feedLine(rest)
+		}
+	}
+	a.flushCurrentData()
+	out := a.response
+	a.materializeChoices(&out)
+	return &out
+}
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			if err := processCurrentData(); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		if currentData.Len() > 0 {
-			currentData.WriteByte('\n')
-		}
-		currentData.WriteString(strings.TrimSpace(strings.TrimPrefix(line, "data: ")))
+func (a *QwenStreamAccum) materializeChoices(out *request.VendorOpenAI) {
+	if a.outputBuilder.Len() == 0 {
+		return
 	}
-	if err := scanner.Err(); err != nil {
+	choicePayload, _ := json.Marshal([]map[string]any{
+		{
+			"message": map[string]string{
+				"role":    "assistant",
+				"content": a.outputBuilder.String(),
+			},
+			"finish_reason": a.finishReason,
+		},
+	})
+	out.Choices = choicePayload
+}
+
+func qwenStreamMaxLineBytes() int {
+	const capMax = 1 << 22 // 4 MiB — SSE lines can exceed the capture window for huge tool payloads.
+	n := config.MaxCapturedPayloadBytes
+	if n <= 0 {
+		return capMax
+	}
+	// Allow several times the configured capture limit per line so a single JSON
+	// chunk is not truncated while the overall response is still bounded by eBPF.
+	wide := n * 8
+	if wide < 256*1024 {
+		wide = 256 * 1024
+	}
+	if wide > capMax {
+		return capMax
+	}
+	return wide
+}
+
+func readLimitedLine(br *bufio.Reader, max int) (string, error) {
+	var b strings.Builder
+	for {
+		c, err := br.ReadByte()
+		if err == io.EOF {
+			if b.Len() == 0 {
+				return "", io.EOF
+			}
+			return b.String(), io.EOF
+		}
+		if err != nil {
+			return "", err
+		}
+		if c == '\n' {
+			return b.String(), nil
+		}
+		if b.Len() >= max {
+			// Skip remainder of line to recover; partial SSE events are dropped.
+			for {
+				c2, err2 := br.ReadByte()
+				if err2 != nil {
+					return b.String(), err2
+				}
+				if c2 == '\n' {
+					slog.Debug("Qwen SSE line exceeded limit; skipped remainder", "max", max)
+					return b.String(), nil
+				}
+			}
+		}
+		b.WriteByte(c)
+	}
+}
+
+func parseQwenStream(reader io.Reader) (*request.VendorOpenAI, error) {
+	acc := NewQwenStreamAccum()
+	if err := acc.ReadFrom(reader); err != nil {
 		return nil, fmt.Errorf("error reading stream: %w", err)
 	}
-	if err := processCurrentData(); err != nil {
-		return nil, err
-	}
+	return acc.Finalize(), nil
+}
 
-	if outputBuilder.Len() > 0 {
-		choicePayload, _ := json.Marshal([]map[string]any{
-			{
-				"message": map[string]string{
-					"role":    "assistant",
-					"content": outputBuilder.String(),
-				},
-				"finish_reason": finishReason,
-			},
-		})
-		response.Choices = choicePayload
+func mergeQwenVendorSnapshot(fromAccum, fromBuf *request.VendorOpenAI) *request.VendorOpenAI {
+	switch {
+	case fromAccum == nil:
+		return fromBuf
+	case fromBuf == nil:
+		return fromAccum
 	}
-
-	return response, nil
+	out := *fromBuf
+	mergeQwenUsagePreferMax(&out.Usage, &fromAccum.Usage)
+	if len(out.GetOutput()) < len(fromAccum.GetOutput()) {
+		out.Choices = fromAccum.Choices
+	}
+	if out.ID == "" {
+		out.ID = fromAccum.ID
+	}
+	if out.ResponseModel == "" {
+		out.ResponseModel = fromAccum.ResponseModel
+	}
+	if out.OperationName == "" {
+		out.OperationName = fromAccum.OperationName
+	}
+	if out.Error.Type == "" && fromAccum.Error.Type != "" {
+		out.Error = fromAccum.Error
+	}
+	return &out
 }
 
 func processQwenStreamData(
@@ -362,7 +523,8 @@ func processQwenStreamData(
 
 	var chunk qwenStreamChunk
 	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-		return fmt.Errorf("error parsing stream data: %w", err)
+		slog.Debug("skipping unparsable Qwen SSE JSON payload", "error", err)
+		return nil
 	}
 
 	if response.ID == "" {
@@ -381,7 +543,7 @@ func processQwenStreamData(
 		response.Error = chunk.Error
 	}
 
-	mergeQwenUsage(&response.Usage, chunk.Usage)
+	mergeQwenUsageFromRaw(&response.Usage, chunk.Usage)
 
 	if chunk.Output.Text != "" {
 		outputBuilder.WriteString(chunk.Output.Text)
@@ -412,27 +574,75 @@ func normalizeQwenOperationName(object string) string {
 	}
 }
 
-func mergeQwenUsage(dst *request.OpenAIUsage, src struct {
-	InputTokens      int `json:"input_tokens"`
-	OutputTokens     int `json:"output_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-}) {
-	if src.InputTokens > 0 {
+func mergeQwenUsageFromRaw(dst *request.OpenAIUsage, raw json.RawMessage) {
+	if dst == nil || len(raw) == 0 || string(raw) == "null" {
+		return
+	}
+	var m map[string]any
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(&m); err != nil {
+		slog.Debug("Qwen stream usage object not decoded", "error", err)
+		return
+	}
+	merge := func(key string, target *int) {
+		v, ok := m[key]
+		if !ok {
+			return
+		}
+		n := anyToInt(v)
+		if n > *target {
+			*target = n
+		}
+	}
+	merge("input_tokens", &dst.InputTokens)
+	merge("output_tokens", &dst.OutputTokens)
+	merge("total_tokens", &dst.TotalTokens)
+	merge("prompt_tokens", &dst.PromptTokens)
+	merge("completion_tokens", &dst.CompletionTokens)
+}
+
+func mergeQwenUsagePreferMax(dst, src *request.OpenAIUsage) {
+	if dst == nil || src == nil {
+		return
+	}
+	if src.InputTokens > dst.InputTokens {
 		dst.InputTokens = src.InputTokens
 	}
-	if src.OutputTokens > 0 {
+	if src.OutputTokens > dst.OutputTokens {
 		dst.OutputTokens = src.OutputTokens
 	}
-	if src.TotalTokens > 0 {
+	if src.TotalTokens > dst.TotalTokens {
 		dst.TotalTokens = src.TotalTokens
 	}
-	if src.PromptTokens > 0 {
+	if src.PromptTokens > dst.PromptTokens {
 		dst.PromptTokens = src.PromptTokens
 	}
-	if src.CompletionTokens > 0 {
+	if src.CompletionTokens > dst.CompletionTokens {
 		dst.CompletionTokens = src.CompletionTokens
+	}
+}
+
+func anyToInt(v any) int {
+	switch x := v.(type) {
+	case json.Number:
+		i, err := x.Int64()
+		if err != nil {
+			f, err2 := x.Float64()
+			if err2 != nil {
+				return 0
+			}
+			return int(f)
+		}
+		return int(i)
+	case float64:
+		return int(x)
+	case int:
+		return x
+	case int64:
+		return int(x)
+	default:
+		return 0
 	}
 }
 

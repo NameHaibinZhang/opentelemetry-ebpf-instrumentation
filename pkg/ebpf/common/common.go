@@ -184,11 +184,15 @@ type CouchbaseBucketInfo struct {
 }
 
 type EBPFParseContext struct {
-	protocolDebug              bool
-	h2c                        *lru.Cache[uint64, h2Connection]
-	redisDBCache               *simplelru.LRU[BpfConnectionInfoT, int]
-	couchbaseBucketCache       *simplelru.LRU[BpfConnectionInfoT, CouchbaseBucketInfo]
-	largeBuffers               *expirable.LRU[largeBufferKey, *largebuf.LargeBuffer]
+	protocolDebug        bool
+	h2c                  *lru.Cache[uint64, h2Connection]
+	redisDBCache         *simplelru.LRU[BpfConnectionInfoT, int]
+	couchbaseBucketCache *simplelru.LRU[BpfConnectionInfoT, CouchbaseBucketInfo]
+	largeBuffers         *expirable.LRU[largeBufferKey, *largebuf.LargeBuffer]
+	// qwenStreamAccumulators incrementally parses SSE bodies from TCP large-buffer
+	// chunks so usage and assistant text survive Scanner limits and align with
+	// whatever bytes the eBPF layer captured (including truncated tails).
+	qwenStreamAccumulators     *expirable.LRU[largeBufferKey, *ebpfhttp.QwenStreamAccum]
 	mongoRequestCache          PendingMongoDBRequests
 	mysqlPreparedStatements    *simplelru.LRU[mysqlPreparedStatementsKey, string]
 	postgresPreparedStatements *simplelru.LRU[postgresPreparedStatementsKey, string]
@@ -240,6 +244,7 @@ func NewEBPFParseContext(cfg *config.EBPFTracer, spansChan *msg.Queue[[]request.
 
 	h2c, _ := lru.New[uint64, h2Connection](1024 * 10)
 	largeBuffers := expirable.NewLRU[largeBufferKey, *largebuf.LargeBuffer](1024, nil, 5*time.Minute)
+	var qwenStreamAccumulators *expirable.LRU[largeBufferKey, *ebpfhttp.QwenStreamAccum]
 
 	if spansChan != nil {
 		emitSpans = func(spans []request.Span) {
@@ -295,6 +300,10 @@ func NewEBPFParseContext(cfg *config.EBPFTracer, spansChan *msg.Queue[[]request.
 		payloadExtraction = cfg.PayloadExtraction
 
 		dnsEvents = expirable.NewLRU(1024, dnsEventExpireHandler(emitSpans), cfg.DNSRequestTimeout)
+
+		if payloadExtraction.HTTP.GenAI.Qwen.Enabled {
+			qwenStreamAccumulators = expirable.NewLRU[largeBufferKey, *ebpfhttp.QwenStreamAccum](1024, nil, 5*time.Minute)
+		}
 	}
 
 	var httpEnricher *ebpfhttp.HTTPEnricher
@@ -308,6 +317,7 @@ func NewEBPFParseContext(cfg *config.EBPFTracer, spansChan *msg.Queue[[]request.
 		redisDBCache:               redisDBCache,
 		couchbaseBucketCache:       couchbaseBucketCache,
 		largeBuffers:               largeBuffers,
+		qwenStreamAccumulators:     qwenStreamAccumulators,
 		mongoRequestCache:          mongoRequestCache,
 		mysqlPreparedStatements:    mysqlPreparedStatements,
 		postgresPreparedStatements: postgresPreparedStatements,

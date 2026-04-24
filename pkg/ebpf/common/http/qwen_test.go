@@ -91,7 +91,7 @@ func TestQwenSpan_CompatibleMode(t *testing.T) {
 	resp := makePlainResponse(http.StatusOK, qwenHeaders(), qwenCompatibleResponseBody)
 
 	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
+	span, ok := QwenSpan(base, req, resp, nil)
 
 	require.True(t, ok)
 	require.NotNil(t, span.GenAI)
@@ -113,7 +113,7 @@ func TestQwenSpan_DashScopeGeneration(t *testing.T) {
 	resp := makePlainResponse(http.StatusOK, qwenHeaders(), qwenGenerationResponseBody)
 
 	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
+	span, ok := QwenSpan(base, req, resp, nil)
 
 	require.True(t, ok)
 	require.NotNil(t, span.GenAI)
@@ -138,7 +138,7 @@ func TestQwenSpan_CompatibleModeSSE(t *testing.T) {
 	}, qwenCompatibleStreamResponseBody)
 
 	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
+	span, ok := QwenSpan(base, req, resp, nil)
 
 	require.True(t, ok)
 	require.NotNil(t, span.GenAI)
@@ -163,7 +163,7 @@ func TestQwenSpan_DashScopeGenerationSSE(t *testing.T) {
 	}, qwenGenerationStreamResponseBody)
 
 	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
+	span, ok := QwenSpan(base, req, resp, nil)
 
 	require.True(t, ok)
 	require.NotNil(t, span.GenAI)
@@ -177,6 +177,40 @@ func TestQwenSpan_DashScopeGenerationSSE(t *testing.T) {
 	assert.Equal(t, 5, ai.Usage.GetInputTokens())
 	assert.Equal(t, 3, ai.Usage.GetOutputTokens())
 	assert.Contains(t, ai.GetOutput(), "Qwen stream")
+}
+
+func TestQwenStreamAccumIncrementalMatchesFullParse(t *testing.T) {
+	body := qwenCompatibleStreamResponseBody
+	acc := NewQwenStreamAccum()
+	for i := 0; i < len(body); i += 17 {
+		end := i + 17
+		if end > len(body) {
+			end = len(body)
+		}
+		require.NoError(t, acc.Feed([]byte(body[i:end])))
+	}
+	fromAcc := acc.Finalize()
+	require.NotNil(t, fromAcc)
+
+	full, err := parseQwenStream(strings.NewReader(body))
+	require.NoError(t, err)
+	require.NotNil(t, full)
+
+	assert.Equal(t, full.Usage.GetInputTokens(), fromAcc.Usage.GetInputTokens())
+	assert.Equal(t, full.Usage.GetOutputTokens(), fromAcc.Usage.GetOutputTokens())
+	assert.Equal(t, full.GetOutput(), fromAcc.GetOutput())
+}
+
+func TestQwenStreamAccumFloatUsageFields(t *testing.T) {
+	body := `data: {"id":"x","object":"chat.completion.chunk","choices":[{"delta":{"content":"hi"}}],"usage":{"prompt_tokens":7.0,"completion_tokens":4.0}}
+
+`
+	acc := NewQwenStreamAccum()
+	require.NoError(t, acc.Feed([]byte(body)))
+	got := acc.Finalize()
+	require.NotNil(t, got)
+	assert.Equal(t, 7, got.Usage.GetInputTokens())
+	assert.Equal(t, 4, got.Usage.GetOutputTokens())
 }
 
 func TestQwenSpan_StreamResponseBodyUnavailableFallsBackToRequestOnly(t *testing.T) {
@@ -198,7 +232,7 @@ func TestQwenSpan_StreamResponseBodyUnavailableFallsBackToRequestOnly(t *testing
 	}
 
 	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
+	span, ok := QwenSpan(base, req, resp, nil)
 
 	require.True(t, ok)
 	require.NotNil(t, span.GenAI)
@@ -231,7 +265,7 @@ func TestQwenSpan_StreamResponseUnavailableAndMalformedRequestStillFallsBack(t *
 	}
 
 	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
+	span, ok := QwenSpan(base, req, resp, nil)
 	require.True(t, ok)
 	require.NotNil(t, span.GenAI)
 	require.NotNil(t, span.GenAI.Qwen)
@@ -268,7 +302,7 @@ func TestQwenSpan_StreamResponseUnavailableAndWrappedJSONRequestRecoversInput(t 
 	}
 
 	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
+	span, ok := QwenSpan(base, req, resp, nil)
 	require.True(t, ok)
 	require.NotNil(t, span.GenAI)
 	require.NotNil(t, span.GenAI.Qwen)
@@ -330,7 +364,7 @@ func TestQwenSpan_IDFallbackFromHeadersWhenBodyMissingID(t *testing.T) {
 	resp := makePlainResponse(http.StatusOK, h, `{"choices":[]}`)
 
 	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
+	span, ok := QwenSpan(base, req, resp, nil)
 
 	require.True(t, ok)
 	require.NotNil(t, span.GenAI)
@@ -353,7 +387,7 @@ func TestQwenSpan_UsesPartialRequestBodyWhenReadFails(t *testing.T) {
 	resp := makePlainResponse(http.StatusOK, h, `{"choices":[]}`)
 
 	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
+	span, ok := QwenSpan(base, req, resp, nil)
 
 	require.True(t, ok)
 	require.NotNil(t, span.GenAI)
@@ -381,7 +415,7 @@ func TestQwenSpan_CompatibleModeRealResponseHeaders(t *testing.T) {
 	}, qwenCompatibleResponseBody)
 
 	base := &request.Span{}
-	span, ok := QwenSpan(base, req, resp)
+	span, ok := QwenSpan(base, req, resp, nil)
 
 	require.True(t, ok)
 	require.NotNil(t, span.GenAI)
@@ -398,7 +432,7 @@ func TestQwenSpan_NotQwen(t *testing.T) {
 	}, qwenCompatibleResponseBody)
 
 	base := &request.Span{}
-	_, ok := QwenSpan(base, req, resp)
+	_, ok := QwenSpan(base, req, resp, nil)
 
 	assert.False(t, ok)
 }
