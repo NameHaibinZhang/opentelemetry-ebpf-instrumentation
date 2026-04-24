@@ -163,6 +163,7 @@ func TestMCPSpan_ToolCall(t *testing.T) {
 
 func TestMCPSpan_ToolCallError(t *testing.T) {
 	req := makeMCPRequest(t, http.MethodPost, "http://localhost:8080/mcp", mcpToolCallRequest)
+	req.Header.Set("Mcp-Session-Id", "sess-err-123")
 	resp := makePlainResponse(http.StatusOK, mcpHeaders(), mcpToolCallErrorResponse)
 
 	base := &request.Span{}
@@ -199,6 +200,7 @@ func TestMCPSpan_ResourceRead(t *testing.T) {
 
 func TestMCPSpan_PromptGet(t *testing.T) {
 	req := makeMCPRequest(t, http.MethodPost, "http://localhost:8080/mcp", mcpPromptGetRequest)
+	req.Header.Set("Mcp-Session-Id", "sess-prompt-456")
 	resp := makePlainResponse(http.StatusOK, mcpHeaders(), mcpPromptGetResponse)
 
 	base := &request.Span{}
@@ -348,6 +350,19 @@ func TestMCPSpan_NotMCP_PingWithoutSession(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestMCPSpan_NotMCP_ToolsCallWithoutSession(t *testing.T) {
+	// Known MCP methods like "tools/call" require the Mcp-Session-Id header
+	// (or an ambiguousMethods disambiguator) to avoid misclassifying plain
+	// JSON-RPC traffic.
+	req := makeMCPRequest(t, http.MethodPost, "http://localhost:8080/mcp", mcpToolCallRequest)
+	resp := makePlainResponse(http.StatusOK, mcpHeaders(), mcpToolCallResponse)
+
+	base := &request.Span{}
+	_, ok := MCPSpan(base, req, resp)
+
+	assert.False(t, ok)
+}
+
 func TestMCPSpan_NotMCP_InitializeWithoutProtocolVersion(t *testing.T) {
 	// "initialize" without protocolVersion in params and without session
 	// header looks like a generic JSON-RPC initialize (e.g. LSP).
@@ -383,6 +398,7 @@ func TestMCPSpan_UnknownMethodWithSessionHeader(t *testing.T) {
 func TestMCPSpan_StringRequestID(t *testing.T) {
 	body := `{"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": "req-abc-42"}`
 	req := makeMCPRequest(t, http.MethodPost, "http://localhost:8080/mcp", body)
+	req.Header.Set("Mcp-Session-Id", "sess-str-id")
 	resp := makePlainResponse(http.StatusOK, mcpHeaders(), `{"jsonrpc":"2.0","result":{"tools":[]},"id":"req-abc-42"}`)
 
 	base := &request.Span{}
@@ -394,6 +410,7 @@ func TestMCPSpan_StringRequestID(t *testing.T) {
 
 func TestMCPSpan_NoResponseBody(t *testing.T) {
 	req := makeMCPRequest(t, http.MethodPost, "http://localhost:8080/mcp", mcpToolCallRequest)
+	req.Header.Set("Mcp-Session-Id", "sess-no-resp")
 	resp := makePlainResponse(http.StatusOK, mcpHeaders(), "")
 
 	base := &request.Span{}

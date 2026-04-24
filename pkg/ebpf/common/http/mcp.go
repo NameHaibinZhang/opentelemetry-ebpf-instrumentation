@@ -44,13 +44,6 @@ var ambiguousMethods = map[string]func(json.RawMessage) bool{
 	"initialize": hasMCPProtocolVersion,
 }
 
-// sessionOnlyMethods lists MCP method names that overlap with other JSON-RPC
-// protocols and have no distinguishing params. These are only classified as
-// MCP when the Mcp-Session-Id header is present.
-var sessionOnlyMethods = map[string]struct{}{
-	"ping": {},
-}
-
 // mcpSessionHeader is the HTTP header that carries the MCP session identifier.
 const mcpSessionHeader = "Mcp-Session-Id"
 
@@ -107,15 +100,17 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 		if sessionID == "" {
 			return *baseSpan, false
 		}
-	} else if _, sessOnly := sessionOnlyMethods[rpcReq.Method]; sessOnly && sessionID == "" {
-		// Method name overlaps with other protocols and has no
-		// distinguishing params — require the session header.
-		return *baseSpan, false
-	} else if disambiguate, ambiguous := ambiguousMethods[rpcReq.Method]; ambiguous && sessionID == "" {
-		// Generic method names like "initialize" are shared with other
-		// JSON-RPC protocols (e.g. LSP). Without the MCP session header,
-		// consult the per-method disambiguator.
-		if !disambiguate(rpcReq.Params) {
+	} else if sessionID == "" {
+		// Without the MCP session header, require MCP-specific evidence
+		// beyond the method name to avoid misclassifying plain JSON-RPC
+		// traffic that happens to use the same method names.
+		disambiguate, ok := ambiguousMethods[rpcReq.Method]
+		if ok && !disambiguate(rpcReq.Params) {
+			return *baseSpan, false
+		}
+		if !ok {
+			// Shared JSON-RPC method names should stay JSON-RPC unless
+			// we have some MCP-specific signal beyond the method string.
 			return *baseSpan, false
 		}
 	}
@@ -190,21 +185,34 @@ func parseMCPParams(rpcReq jsonRPCRequest, result *request.MCPCall) {
 }
 
 // parseMCPResponse extracts error information and protocol version from the response.
+// It handles both single object and batch JSON-RPC responses, reusing
+// matchResponse for batch ID matching.
 func parseMCPResponse(data []byte, result *request.MCPCall) {
 	data = bytes.TrimSpace(data)
-	if len(data) == 0 || data[0] != '{' {
+	if len(data) == 0 {
 		return
 	}
 
-	var resp jsonRPCResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return
+	switch data[0] {
+	case '{':
+		var resp jsonRPCResponse
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return
+		}
+		applyMCPResponse(resp, result)
+	case '[':
+		var batch []jsonRPCResponse
+		if err := json.Unmarshal(data, &batch); err != nil {
+			return
+		}
+		if resp, ok := matchResponse(batch, result.RequestID); ok {
+			applyMCPResponse(resp, result)
+		}
 	}
+}
 
-	if resp.JSONRPC != "2.0" {
-		return
-	}
-
+// applyMCPResponse extracts MCP-specific fields from a single JSON-RPC response.
+func applyMCPResponse(resp jsonRPCResponse, result *request.MCPCall) {
 	if resp.Error != nil {
 		result.ErrorCode = resp.Error.Code
 		result.ErrorMessage = resp.Error.Message
