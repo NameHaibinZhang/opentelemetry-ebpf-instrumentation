@@ -77,6 +77,13 @@ func httpInfoToSpanLegacy(info *HTTPInfo) request.Span {
 func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, req *http.Request, resp *http.Response) request.Span {
 	defer req.Body.Close()
 	defer resp.Body.Close()
+	slog.Debug(
+		"Entering httpRequestResponseToSpan",
+		"traceID", event.Tp.TraceId,
+		"method", req.Method,
+		"path", req.URL.String(),
+		"status", resp.StatusCode,
+	)
 
 	peer, host := (*BPFConnInfo)(&event.ConnInfo).reqHostInfo()
 
@@ -137,6 +144,7 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 	}
 
 	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.AWS.Enabled {
+		slog.Debug("Evaluating AWS client parser", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
 		span, ok := ebpfhttp.AWSS3Span(&httpSpan, req, resp)
 		if ok {
 			return span
@@ -156,6 +164,7 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 	}
 
 	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.Elasticsearch.Enabled {
+		slog.Debug("Evaluating Elasticsearch client parser", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
 		span, ok := ebpfhttp.ElasticsearchSpan(&httpSpan, req, resp)
 		if ok {
 			return span
@@ -163,6 +172,7 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 	}
 
 	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.SQLPP.Enabled {
+		slog.Debug("Evaluating SQLPP client parser", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
 		span, ok := ebpfhttp.SQLPPSpan(&httpSpan, req, resp, parseCtx.payloadExtraction.HTTP.SQLPP.EndpointPatterns)
 		if ok {
 			return span
@@ -170,13 +180,17 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 	}
 
 	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.GenAI.OpenAI.Enabled {
+		slog.Debug("Evaluating OpenAI parser", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
 		span, ok := ebpfhttp.OpenAISpan(&httpSpan, req, resp)
 		if ok {
+			slog.Debug("OpenAI parser matched", "traceID", event.Tp.TraceId, "path", span.Path)
 			return span
 		}
+		slog.Debug("OpenAI parser did not match", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
 	}
 
 	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.GenAI.Anthropic.Enabled {
+		slog.Debug("Evaluating Anthropic parser", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
 		span, ok := ebpfhttp.AnthropicSpan(&httpSpan, req, resp)
 		if ok {
 			return span
@@ -184,6 +198,7 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 	}
 
 	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.GenAI.Gemini.Enabled {
+		slog.Debug("Evaluating Gemini parser", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
 		span, ok := ebpfhttp.GeminiSpan(&httpSpan, req, resp)
 		if ok {
 			return span
@@ -191,13 +206,17 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 	}
 
 	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.GenAI.Qwen.Enabled {
+		slog.Debug("Evaluating Qwen parser", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
 		span, ok := ebpfhttp.QwenSpan(&httpSpan, req, resp)
 		if ok {
+			slog.Debug("Qwen parser matched", "traceID", event.Tp.TraceId, "path", span.Path)
 			return span
 		}
+		slog.Debug("Qwen parser did not match", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
 	}
 
 	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.GenAI.Bedrock.Enabled {
+		slog.Debug("Evaluating Bedrock parser", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
 		span, ok := ebpfhttp.BedrockSpan(&httpSpan, req, resp)
 		if ok {
 			return span
