@@ -89,7 +89,7 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	respB, err := getResponseBody(resp)
 	if err != nil && len(respB) == 0 {
 		slog.Debug("Qwen parser response body unavailable; trying strict request-only fallback", "path", path, "error", err)
-		if fallbackSpan, ok := QwenStreamRequestSpan(baseSpan, req); ok {
+		if fallbackSpan, ok := qwenStreamRequestSpan(baseSpan, req, isSSEContentType(resp.Header.Get("Content-Type"))); ok {
 			if fallbackSpan.GenAI != nil && fallbackSpan.GenAI.Qwen != nil && fallbackSpan.GenAI.Qwen.ID == "" {
 				for _, headerName := range []string{"X-DashScope-Request-Id", "X-Request-Id"} {
 					if headerValue := strings.TrimSpace(resp.Header.Get(headerName)); headerValue != "" {
@@ -181,6 +181,10 @@ type qwenRequestEnvelope struct {
 // QwenStreamRequestSpan is a strict request-only fallback used when
 // response payload is unavailable (e.g. missing large response buffer).
 func QwenStreamRequestSpan(baseSpan *request.Span, req *http.Request) (request.Span, bool) {
+	return qwenStreamRequestSpan(baseSpan, req, false)
+}
+
+func qwenStreamRequestSpan(baseSpan *request.Span, req *http.Request, streamHint bool) (request.Span, bool) {
 	if req == nil {
 		slog.Debug("Qwen stream fallback rejected: nil request")
 		return *baseSpan, false
@@ -206,7 +210,8 @@ func QwenStreamRequestSpan(baseSpan *request.Span, req *http.Request) (request.S
 		slog.Debug("failed to parse Qwen stream request fallback", "error", err)
 	}
 
-	isStream := parsedReq.Stream || streamFieldRegexp.Match(reqB)
+	isStream := streamHint || parsedReq.Stream || streamFieldRegexp.Match(reqB) ||
+		isSSEContentType(req.Header.Get("Accept"))
 	if !isStream {
 		slog.Debug("Qwen stream fallback rejected: request is not stream", "path", path, "model", parsedReq.Model)
 		return *baseSpan, false
@@ -222,7 +227,10 @@ func QwenStreamRequestSpan(baseSpan *request.Span, req *http.Request) (request.S
 		}
 	}
 
-	if !strings.HasPrefix(strings.ToLower(parsedReq.Model), "qwen") {
+	if parsedReq.Model == "" && isDashScopeHost(req) {
+		slog.Debug("Qwen stream fallback proceeding without model due dashscope host + stream signal", "path", path)
+	}
+	if parsedReq.Model != "" && !strings.HasPrefix(strings.ToLower(parsedReq.Model), "qwen") {
 		slog.Debug("Qwen stream fallback rejected: model is not qwen", "path", path, "model", parsedReq.Model)
 		return *baseSpan, false
 	}
@@ -425,6 +433,21 @@ func isQwenStreamRequestPath(req *http.Request) bool {
 	path := qwenRequestPath(req)
 	return strings.Contains(path, "/compatible-mode/") ||
 		strings.Contains(path, "/services/aigc/")
+}
+
+func isDashScopeHost(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	host := req.Host
+	if req.URL != nil && req.URL.Host != "" {
+		host = req.URL.Host
+	}
+	return strings.Contains(strings.ToLower(host), "dashscope.aliyuncs.com")
+}
+
+func isSSEContentType(contentType string) bool {
+	return strings.Contains(strings.ToLower(contentType), "text/event-stream")
 }
 
 func extractQwenOperation(req *http.Request) string {
