@@ -61,12 +61,19 @@ func EmbeddingSpan(baseSpan *request.Span, req *http.Request, resp *http.Respons
 		return *baseSpan, false
 	}
 
-	reqB, err := io.ReadAll(req.Body)
-	if err != nil {
-		slog.Debug("EmbeddingSpan: failed to read request body", "provider", provider, "error", err)
-		return *baseSpan, false
+	// Request body parsing is best-effort: since the provider is already
+	// confirmed by hostname+path, a body read failure should not prevent
+	// classification — otherwise the request falls through to downstream
+	// detectors and may be misclassified.
+	var reqB []byte
+	if req.Body != nil {
+		var err error
+		reqB, err = io.ReadAll(req.Body)
+		if err != nil {
+			slog.Debug("EmbeddingSpan: failed to read request body, continuing without it", "provider", provider, "error", err)
+		}
+		req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 	}
-	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 
 	// Response body parsing is best-effort: gzip-compressed or truncated
 	// responses should not prevent provider detection.
