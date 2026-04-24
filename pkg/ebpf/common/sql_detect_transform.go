@@ -13,10 +13,13 @@ import (
 func sqlKind(b *largebuf.LargeBuffer) request.SQLKind {
 	if isPostgres(b) {
 		return request.DBPostgres
-	} else if isMySQL(b) {
+	}
+	if isMySQL(b) {
 		return request.DBMySQL
 	}
-
+	if isMSSQL(b) {
+		return request.DBMSSQL
+	}
 	return request.DBGeneric
 }
 
@@ -89,6 +92,8 @@ func detectSQLPayload(useHeuristics bool, b *largebuf.LargeBuffer) (string, stri
 			op, table, sql = postgresPreparedStatements(b)
 		case request.DBMySQL:
 			op, table, sql = mysqlPreparedStatements(view)
+		case request.DBMSSQL:
+			op, table, sql = mssqlExtractBatchSQL(b)
 		}
 	}
 

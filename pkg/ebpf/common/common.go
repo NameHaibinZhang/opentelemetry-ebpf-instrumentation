@@ -83,6 +83,7 @@ const (
 	ProtocolTypeHTTP // not used, written for consistency
 	ProtocolTypeKafka
 	ProtocolTypeMQTT // placeholder for future kernel-space detection
+	ProtocolTypeMSSQL
 	ProtocolTypeNATS // placeholder for future kernel-space detection
 )
 
@@ -194,6 +195,7 @@ type EBPFParseContext struct {
 	mysqlPreparedStatements    *simplelru.LRU[mysqlPreparedStatementsKey, string]
 	postgresPreparedStatements *simplelru.LRU[postgresPreparedStatementsKey, string]
 	postgresPortals            *simplelru.LRU[postgresPortalsKey, string]
+	mssqlPreparedStatements    *simplelru.LRU[mssqlPreparedStatementsKey, string]
 	kafkaTopicUUIDToName       *simplelru.LRU[kafkaparser.UUID, string]
 	payloadExtraction          config.PayloadExtraction
 	httpEnricher               *ebpfhttp.HTTPEnricher
@@ -276,6 +278,7 @@ func NewEBPFParseContext(cfg *config.EBPFTracer, spansChan *msg.Queue[[]request.
 		mysqlPreparedStatements    *simplelru.LRU[mysqlPreparedStatementsKey, string]
 		postgresPreparedStatements *simplelru.LRU[postgresPreparedStatementsKey, string]
 		postgresPortals            *simplelru.LRU[postgresPortalsKey, string]
+		mssqlPreparedStatements    *simplelru.LRU[mssqlPreparedStatementsKey, string]
 		kafkaTopicUUIDToName       *simplelru.LRU[kafkaparser.UUID, string]
 		mongoRequestCache          PendingMongoDBRequests
 		payloadExtraction          config.PayloadExtraction
@@ -330,6 +333,11 @@ func NewEBPFParseContext(cfg *config.EBPFTracer, spansChan *msg.Queue[[]request.
 			ptlog().Error("failed to create Postgres portals cache", "error", err)
 		}
 
+		mssqlPreparedStatements, err = simplelru.NewLRU[mssqlPreparedStatementsKey, string](cfg.MSSQLPreparedStatementsCacheSize, nil)
+		if err != nil {
+			ptlog().Error("failed to create MSSQL prepared statements cache", "error", err)
+		}
+
 		kafkaTopicUUIDToName, err = simplelru.NewLRU[kafkaparser.UUID, string](cfg.KafkaTopicUUIDCacheSize, nil)
 		if err != nil {
 			ptlog().Error("failed to create Kafka topic UUID to name cache", "error", err)
@@ -357,6 +365,7 @@ func NewEBPFParseContext(cfg *config.EBPFTracer, spansChan *msg.Queue[[]request.
 		mysqlPreparedStatements:    mysqlPreparedStatements,
 		postgresPreparedStatements: postgresPreparedStatements,
 		postgresPortals:            postgresPortals,
+		mssqlPreparedStatements:    mssqlPreparedStatements,
 		kafkaTopicUUIDToName:       kafkaTopicUUIDToName,
 		payloadExtraction:          payloadExtraction,
 		httpEnricher:               httpEnricher,
