@@ -141,6 +141,7 @@ int obi_handle_buf_with_args(void *ctx) {
                                        args->bytes_len,
                                        packet_type,
                                        args->direction,
+                                       args->ssl,
                                        k_large_buf_action_append);
 
                 if (reading) {

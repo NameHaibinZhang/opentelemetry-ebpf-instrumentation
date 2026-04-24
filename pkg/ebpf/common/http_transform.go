@@ -222,7 +222,7 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 			return span
 		}
 	}
-
+	slog.Debug("Evaluating JSONRPC parser", "traceID", event.Tp.TraceId, "path", httpSpan.Path)
 	if parseCtx != nil && parseCtx.payloadExtraction.HTTP.JSONRPC.Enabled {
 		span, ok := ebpfhttp.JSONRPCSpan(&httpSpan, req, resp)
 		if ok {
@@ -278,6 +278,30 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 		}
 	} else {
 		requestBuffer = largebuf.NewLargeBufferFrom(event.Buf[:])
+	}
+
+	// Defense-in-depth: if the captured request or response buffer begins with
+	// a TLS record header (e.g. 0x17 0x03 application_data), the eBPF side has
+	// mixed plaintext and ciphertext in the same large buffer. This should no
+	// longer happen thanks to the SSL-mismatch guard in http_send_large_buffer,
+	// but we still sanitise here so that older kernels or out-of-tree BPF
+	// objects never produce malformed spans.
+	if isLikelyTLSRecord(bufferHeadBytes(requestBuffer, 5)) {
+		slog.Debug(
+			"discarding HTTP request buffer: looks like raw TLS record (plaintext/ciphertext mix)",
+			"traceID", event.Tp.TraceId,
+			"conn", event.ConnInfo,
+		)
+		requestBuffer = largebuf.NewLargeBufferFrom(event.Buf[:])
+	}
+	if hasResponse && isLikelyTLSRecord(bufferHeadBytes(responseBuffer, 5)) {
+		slog.Debug(
+			"discarding HTTP response buffer: looks like raw TLS record (plaintext/ciphertext mix)",
+			"traceID", event.Tp.TraceId,
+			"conn", event.ConnInfo,
+		)
+		responseBuffer = nil
+		hasResponse = false
 	}
 
 	if parseCtx != nil && !parseCtx.payloadExtraction.Enabled() {
@@ -436,4 +460,49 @@ func httpHostFromBuf(req []byte) (string, int) {
 	port, _ := strconv.Atoi(portStr)
 
 	return host, port
+}
+
+// isLikelyTLSRecord reports whether the byte slice looks like the leading
+// bytes of a TLS 1.0–1.3 record header rather than a plaintext HTTP message.
+//
+// TLS record format (RFC 5246 §6.2.1, RFC 8446 §5.1):
+//
+//	struct {
+//	    ContentType type;           // 1 byte, 20..23 (0x14..0x17) or 24 (0x18)
+//	    ProtocolVersion version;    // 2 bytes, major 0x03 + minor 0x00..0x04
+//	    uint16 length;              // 2 bytes
+//	    opaque fragment[length];
+//	} TLSPlaintext;
+//
+// A valid HTTP request begins with an ASCII method letter, and a valid HTTP
+// response begins with "HTTP/". Neither collides with the record-type prefix,
+// so we can reliably reject a buffer that starts with these bytes as having
+// captured ciphertext instead of the plaintext payload.
+func isLikelyTLSRecord(head []byte) bool {
+	if len(head) < 3 {
+		return false
+	}
+	switch head[0] {
+	case 0x14, // change_cipher_spec
+		0x15, // alert
+		0x16, // handshake
+		0x17, // application_data
+		0x18: // heartbeat
+		// Require TLS major version byte to avoid false positives when a
+		// legitimate payload happens to start with one of the bytes above.
+		return head[1] == 0x03 && head[2] <= 0x04
+	}
+	return false
+}
+
+// bufferHeadBytes returns up to n bytes from the start of the captured
+// LargeBuffer without consuming it. It is safe to call with a nil receiver.
+func bufferHeadBytes(buf *largebuf.LargeBuffer, n int) []byte {
+	if buf == nil || n <= 0 {
+		return nil
+	}
+	r := buf.NewReader()
+	head := make([]byte, n)
+	read, _ := io.ReadFull(&r, head)
+	return head[:read]
 }

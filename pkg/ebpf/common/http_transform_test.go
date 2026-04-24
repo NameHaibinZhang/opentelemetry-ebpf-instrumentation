@@ -369,6 +369,65 @@ func TestMethodURLParsing(t *testing.T) {
 	assert.Empty(t, httpURLFromBuf(i.Buf[:]))
 }
 
+func TestIsLikelyTLSRecord(t *testing.T) {
+	cases := []struct {
+		name     string
+		head     []byte
+		expected bool
+	}{
+		{
+			name:     "empty",
+			head:     nil,
+			expected: false,
+		},
+		{
+			name:     "too short",
+			head:     []byte{0x17, 0x03},
+			expected: false,
+		},
+		{
+			name:     "tls application_data v1.2",
+			head:     []byte{0x17, 0x03, 0x03, 0x00, 0x40},
+			expected: true,
+		},
+		{
+			name:     "tls handshake v1.0",
+			head:     []byte{0x16, 0x03, 0x01, 0x00, 0x20},
+			expected: true,
+		},
+		{
+			name:     "tls alert v1.3",
+			head:     []byte{0x15, 0x03, 0x04, 0x00, 0x02},
+			expected: true,
+		},
+		{
+			name:     "http request GET",
+			head:     []byte("GET /"),
+			expected: false,
+		},
+		{
+			name:     "http response",
+			head:     []byte("HTTP/1"),
+			expected: false,
+		},
+		{
+			name:     "record byte without TLS major",
+			head:     []byte{0x17, 0x01, 0x02, 0x03, 0x04},
+			expected: false,
+		},
+		{
+			name:     "record byte with out-of-range minor version",
+			head:     []byte{0x17, 0x03, 0x05, 0x00, 0x00},
+			expected: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, isLikelyTLSRecord(tc.head))
+		})
+	}
+}
+
 func makeHTTPInfo(method, path, peer, host string, peerPort, hostPort uint32, status uint16, durationMs uint64) HTTPInfo {
 	bpfInfo := BPFHTTPInfo{
 		Type:            1,

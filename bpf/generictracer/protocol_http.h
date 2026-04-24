@@ -338,9 +338,27 @@ static __always_inline int http_send_large_buffer(http_info_t *req,
                                                   u32 bytes_len,
                                                   u8 packet_type,
                                                   u8 direction,
+                                                  u8 buf_ssl,
                                                   enum large_buf_action action) {
     if (http_max_captured_bytes > k_large_buf_max_http_captured_bytes) {
         bpf_dbg_printk("BUG: http_max_captured_bytes exceeds maximum allowed value.");
+    }
+
+    // Guard against mixing transport layers in the same captured buffer.
+    // When an http_info_t was established through the SSL uprobe path
+    // (plaintext capture, req->ssl=1), any subsequent bytes arriving from
+    // the raw TCP path (tcp_sendmsg / socket filter backup buffers,
+    // buf_ssl=0) are encrypted TLS records and would corrupt the captured
+    // plaintext, producing bodies that start with 0x17 application_data
+    // records and breaking HTTP/JSON parsing in user space. Reject the
+    // mismatch early.
+    if (req->ssl != buf_ssl) {
+        bpf_dbg_printk(
+            "HTTP large buffer ssl mismatch: info->ssl=%d buf_ssl=%d packet_type=%d",
+            req->ssl,
+            buf_ssl,
+            packet_type);
+        return 0;
     }
 
     const u32 bytes_sent =
@@ -412,6 +430,7 @@ static __always_inline int __obi_continue2_protocol_http(struct pt_regs *ctx,
                            args->bytes_len,
                            args->packet_type,
                            args->direction,
+                           args->ssl,
                            k_large_buf_action_init);
 
     // we copy some small part of the buffer to the info trace event, so that we can process an event even with
@@ -724,6 +743,7 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
                                args->bytes_len,
                                args->packet_type,
                                args->direction,
+                               args->ssl,
                                k_large_buf_action_init);
         handle_http_response(
             args->small_buf, &args->pid_conn, info, args->bytes_len, args->lw_thread);
@@ -734,6 +754,7 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
                                args->bytes_len,
                                args->packet_type,
                                args->direction,
+                               args->ssl,
                                k_large_buf_action_append);
 
         info->len += args->bytes_len;
