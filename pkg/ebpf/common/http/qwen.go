@@ -64,10 +64,11 @@ func isQwen(respHeader http.Header) bool {
 }
 
 func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
+	path := qwenRequestPath(req)
 	if !isQwen(resp.Header) {
 		slog.Debug(
 			"Qwen response headers not detected",
-			"path", qwenRequestPath(req),
+			"path", path,
 			"has_x_dashscope_request_id", resp.Header.Get("X-DashScope-Request-Id") != "",
 			"has_x_dashscope_call_gateway", resp.Header.Get("X-Dashscope-Call-Gateway") != "",
 			"content_type", resp.Header.Get("Content-Type"),
@@ -77,6 +78,7 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 
 	reqB, err := io.ReadAll(req.Body)
 	if err != nil && len(reqB) == 0 {
+		slog.Debug("Qwen parser rejected: request body unavailable", "path", path, "error", err)
 		return *baseSpan, false
 	}
 	if err != nil {
@@ -86,6 +88,7 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 
 	respB, err := getResponseBody(resp)
 	if err != nil && len(respB) == 0 {
+		slog.Debug("Qwen parser rejected: response body unavailable", "path", path, "error", err)
 		return *baseSpan, false
 	}
 
