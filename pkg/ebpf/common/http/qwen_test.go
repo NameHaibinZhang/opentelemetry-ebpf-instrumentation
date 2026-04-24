@@ -178,6 +178,47 @@ func TestQwenSpan_DashScopeGenerationSSE(t *testing.T) {
 	assert.Contains(t, ai.GetOutput(), "Qwen stream")
 }
 
+func TestQwenStreamRequestSpan_StrictFallback(t *testing.T) {
+	req := makeRequest(
+		t,
+		http.MethodPost,
+		"https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+		`{"model":"qwen-plus","stream":true,"messages":[{"role":"user","content":"hi"}]}`,
+	)
+
+	base := &request.Span{Type: request.EventTypeHTTPClient}
+	span, ok := QwenStreamRequestSpan(base, req)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Qwen)
+	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
+	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
+	assert.Equal(t, "qwen-plus", span.GenAI.Qwen.Request.Model)
+	assert.Equal(t, "qwen-plus", span.GenAI.Qwen.ResponseModel)
+}
+
+func TestQwenStreamRequestSpan_RejectsNonQwenOrNonStream(t *testing.T) {
+	reqNoStream := makeRequest(
+		t,
+		http.MethodPost,
+		"https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+		`{"model":"qwen-plus","messages":[{"role":"user","content":"hi"}]}`,
+	)
+	base := &request.Span{Type: request.EventTypeHTTPClient}
+	_, ok := QwenStreamRequestSpan(base, reqNoStream)
+	assert.False(t, ok)
+
+	reqNonQwen := makeRequest(
+		t,
+		http.MethodPost,
+		"https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+		`{"model":"gpt-4o-mini","stream":true,"messages":[{"role":"user","content":"hi"}]}`,
+	)
+	_, ok = QwenStreamRequestSpan(base, reqNonQwen)
+	assert.False(t, ok)
+}
+
 func TestQwenSpan_IDFallbackFromHeadersWhenBodyMissingID(t *testing.T) {
 	req := makeRequest(t, http.MethodPost, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", qwenCompatibleRequestBody)
 	h := http.Header{}

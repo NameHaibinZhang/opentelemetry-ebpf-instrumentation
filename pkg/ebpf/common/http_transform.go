@@ -268,8 +268,21 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 	}
 
 	if !hasResponse {
-		// Large buffers disabled
-		return httpRequestToSpan(event, requestBuffer), false, nil
+		// Response payload unavailable (e.g. missing large response buffer).
+		// Try strict request-only Qwen stream fallback for client spans.
+		httpSpan := httpRequestToSpan(event, requestBuffer)
+		if isClient &&
+			parseCtx != nil &&
+			parseCtx.payloadExtraction.HTTP.GenAI.Qwen.Enabled {
+			reqReader := requestBuffer.NewReader()
+			req, err := http.ReadRequest(bufio.NewReader(&reqReader))
+			if err == nil {
+				if span, ok := ebpfhttp.QwenStreamRequestSpan(&httpSpan, req); ok {
+					return span, false, nil
+				}
+			}
+		}
+		return httpSpan, false, nil
 	}
 
 	// http.ReadRequest requires a *bufio.Reader; that one allocation is unavoidable.

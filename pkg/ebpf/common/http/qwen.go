@@ -24,6 +24,7 @@ import (
 // modelSearchWindow bytes so that we don't accidentally match a "model"
 // key buried inside a user prompt or message content.
 var modelFieldRegexp = regexp.MustCompile(`"model"\s*:\s*"([^"]+)"`)
+var streamFieldRegexp = regexp.MustCompile(`"stream"\s*:\s*true\b`)
 
 const modelSearchWindow = 200
 
@@ -144,6 +145,62 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	baseSpan.SubType = request.HTTPSubtypeQwen
 	baseSpan.GenAI = &request.GenAI{
 		Qwen: &parsedResponse,
+	}
+
+	return *baseSpan, true
+}
+
+type qwenRequestEnvelope struct {
+	request.OpenAIInput
+	Stream bool `json:"stream"`
+}
+
+// QwenStreamRequestSpan is a strict request-only fallback used when
+// response payload is unavailable (e.g. missing large response buffer).
+func QwenStreamRequestSpan(baseSpan *request.Span, req *http.Request) (request.Span, bool) {
+	if req == nil || !isQwenStreamRequestPath(req) {
+		return *baseSpan, false
+	}
+
+	reqB, err := io.ReadAll(req.Body)
+	if err != nil && len(reqB) == 0 {
+		return *baseSpan, false
+	}
+	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
+
+	var parsedReq qwenRequestEnvelope
+	if err := json.Unmarshal(reqB, &parsedReq); err != nil {
+		slog.Debug("failed to parse Qwen stream request fallback", "error", err)
+	}
+
+	isStream := parsedReq.Stream || streamFieldRegexp.Match(reqB)
+	if !isStream {
+		return *baseSpan, false
+	}
+
+	if parsedReq.Model == "" {
+		window := reqB
+		if len(window) > modelSearchWindow {
+			window = window[:modelSearchWindow]
+		}
+		if matches := modelFieldRegexp.FindSubmatch(window); len(matches) == 2 {
+			parsedReq.Model = strings.TrimSpace(string(matches[1]))
+		}
+	}
+
+	if !strings.HasPrefix(strings.ToLower(parsedReq.Model), "qwen") {
+		return *baseSpan, false
+	}
+
+	parsedResp := &request.VendorOpenAI{
+		OperationName: extractQwenOperation(req),
+		ResponseModel: parsedReq.Model,
+		Request:       parsedReq.OpenAIInput,
+	}
+
+	baseSpan.SubType = request.HTTPSubtypeQwen
+	baseSpan.GenAI = &request.GenAI{
+		Qwen: parsedResp,
 	}
 
 	return *baseSpan, true
@@ -322,6 +379,16 @@ func mergeQwenUsage(dst *request.OpenAIUsage, src struct {
 	if src.CompletionTokens > 0 {
 		dst.CompletionTokens = src.CompletionTokens
 	}
+}
+
+func isQwenStreamRequestPath(req *http.Request) bool {
+	op := extractQwenOperation(req)
+	if op != "chat.completion" && op != "completion" && op != "generation" {
+		return false
+	}
+	path := qwenRequestPath(req)
+	return strings.Contains(path, "/compatible-mode/") ||
+		strings.Contains(path, "/services/aigc/")
 }
 
 func extractQwenOperation(req *http.Request) string {
