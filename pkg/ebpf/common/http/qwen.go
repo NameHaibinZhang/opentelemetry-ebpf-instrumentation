@@ -27,6 +27,8 @@ var modelFieldRegexp = regexp.MustCompile(`"model"\s*:\s*"([^"]+)"`)
 var streamFieldRegexp = regexp.MustCompile(`"stream"\s*:\s*true\b`)
 
 const modelSearchWindow = 200
+const qwenFallbackPayloadUnavailable = "[payload_unavailable]"
+const qwenFallbackOutputUnavailableJSON = `[{"message":{"role":"assistant","content":"[payload_unavailable]"},"finish_reason":"unknown"}]`
 
 func qwenRequestPath(req *http.Request) string {
 	if req == nil {
@@ -228,17 +230,26 @@ func qwenStreamRequestSpan(baseSpan *request.Span, req *http.Request, streamHint
 	}
 
 	if parsedReq.Model == "" && isDashScopeHost(req) {
-		slog.Debug("Qwen stream fallback proceeding without model due dashscope host + stream signal", "path", path)
+		parsedReq.Model = "qwen"
+		slog.Debug("Qwen stream fallback defaulted missing model", "path", path, "model", parsedReq.Model)
 	}
 	if parsedReq.Model != "" && !strings.HasPrefix(strings.ToLower(parsedReq.Model), "qwen") {
 		slog.Debug("Qwen stream fallback rejected: model is not qwen", "path", path, "model", parsedReq.Model)
 		return *baseSpan, false
+	}
+	if parsedReq.GetInput() == "" {
+		parsedReq.Input = qwenFallbackPayloadUnavailable
+		slog.Debug("Qwen stream fallback defaulted missing input", "path", path)
 	}
 
 	parsedResp := &request.VendorOpenAI{
 		OperationName: extractQwenOperation(req),
 		ResponseModel: parsedReq.Model,
 		Request:       parsedReq.OpenAIInput,
+	}
+	if parsedResp.GetOutput() == "" {
+		parsedResp.Choices = json.RawMessage(qwenFallbackOutputUnavailableJSON)
+		slog.Debug("Qwen stream fallback defaulted missing output", "path", path)
 	}
 
 	baseSpan.SubType = request.HTTPSubtypeQwen

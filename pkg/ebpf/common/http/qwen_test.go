@@ -237,6 +237,10 @@ func TestQwenSpan_StreamResponseUnavailableAndMalformedRequestStillFallsBack(t *
 	require.NotNil(t, span.GenAI.Qwen)
 	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
 	assert.Equal(t, "chat.completion", span.GenAI.Qwen.OperationName)
+	assert.Equal(t, "qwen", span.GenAI.Qwen.Request.Model)
+	assert.Equal(t, "qwen", span.GenAI.Qwen.ResponseModel)
+	assert.Equal(t, qwenFallbackPayloadUnavailable, span.GenAI.Qwen.Request.GetInput())
+	assert.Contains(t, span.GenAI.Qwen.GetOutput(), qwenFallbackPayloadUnavailable)
 	assert.Equal(t, "req-header", span.GenAI.Qwen.ID)
 }
 
