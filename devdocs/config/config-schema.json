@@ -761,6 +761,7 @@
         "enabled": {
           "type": "boolean",
           "description": "Enable generic embedding provider (Voyage AI, Cohere, Jina AI) payload extraction and parsing",
+          "default": false,
           "x-env-var": "OTEL_EBPF_HTTP_EMBEDDING_ENABLED"
         }
       },
