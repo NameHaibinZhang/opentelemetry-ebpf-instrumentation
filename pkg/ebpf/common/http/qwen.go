@@ -4,8 +4,10 @@
 package ebpfcommon // import "go.opentelemetry.io/obi/pkg/ebpf/common/http"
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -97,7 +99,15 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 
 	var parsedResponse request.VendorOpenAI
 	if err := json.Unmarshal(respB, &parsedResponse); err != nil {
-		slog.Debug("failed to parse Qwen response", "error", err)
+		if isQwenStreamResponse(resp, respB) {
+			if streamResponse, streamErr := parseQwenStream(bytes.NewReader(respB)); streamErr == nil {
+				parsedResponse = *streamResponse
+			} else {
+				slog.Debug("failed to parse Qwen stream response", "error", streamErr)
+			}
+		} else {
+			slog.Debug("failed to parse Qwen response", "error", err)
+		}
 	}
 
 	if parsedResponse.ID == "" {
@@ -137,6 +147,181 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	}
 
 	return *baseSpan, true
+}
+
+func isQwenStreamResponse(resp *http.Response, respBody []byte) bool {
+	if resp != nil && strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+		return true
+	}
+	return bytes.HasPrefix(bytes.TrimSpace(respBody), []byte("data:"))
+}
+
+type qwenStreamChunk struct {
+	ID        string `json:"id"`
+	RequestID string `json:"request_id"`
+	Object    string `json:"object"`
+	Model     string `json:"model"`
+	Usage     struct {
+		InputTokens      int `json:"input_tokens"`
+		OutputTokens     int `json:"output_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
+	Output struct {
+		Text string `json:"text"`
+	} `json:"output"`
+	Choices []struct {
+		Text  string `json:"text"`
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Error request.OpenAIError `json:"error"`
+}
+
+func parseQwenStream(reader io.Reader) (*request.VendorOpenAI, error) {
+	scanner := bufio.NewScanner(reader)
+	response := &request.VendorOpenAI{}
+	var outputBuilder strings.Builder
+	var finishReason string
+	var currentData strings.Builder
+
+	processCurrentData := func() error {
+		if currentData.Len() == 0 {
+			return nil
+		}
+		defer currentData.Reset()
+		return processQwenStreamData(strings.TrimSpace(currentData.String()), response, &outputBuilder, &finishReason)
+	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			if err := processCurrentData(); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		if currentData.Len() > 0 {
+			currentData.WriteByte('\n')
+		}
+		currentData.WriteString(strings.TrimSpace(strings.TrimPrefix(line, "data: ")))
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading stream: %w", err)
+	}
+	if err := processCurrentData(); err != nil {
+		return nil, err
+	}
+
+	if outputBuilder.Len() > 0 {
+		choicePayload, _ := json.Marshal([]map[string]any{
+			{
+				"message": map[string]string{
+					"role":    "assistant",
+					"content": outputBuilder.String(),
+				},
+				"finish_reason": finishReason,
+			},
+		})
+		response.Choices = choicePayload
+	}
+
+	return response, nil
+}
+
+func processQwenStreamData(
+	data string,
+	response *request.VendorOpenAI,
+	outputBuilder *strings.Builder,
+	finishReason *string,
+) error {
+	if data == "" || data == "[DONE]" {
+		return nil
+	}
+
+	var chunk qwenStreamChunk
+	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		return fmt.Errorf("error parsing stream data: %w", err)
+	}
+
+	if response.ID == "" {
+		response.ID = chunk.ID
+	}
+	if response.ID == "" {
+		response.ID = chunk.RequestID
+	}
+	if response.OperationName == "" {
+		response.OperationName = normalizeQwenOperationName(chunk.Object)
+	}
+	if response.ResponseModel == "" {
+		response.ResponseModel = chunk.Model
+	}
+	if response.Error.Type == "" && chunk.Error.Type != "" {
+		response.Error = chunk.Error
+	}
+
+	mergeQwenUsage(&response.Usage, chunk.Usage)
+
+	if chunk.Output.Text != "" {
+		outputBuilder.WriteString(chunk.Output.Text)
+	}
+	for _, choice := range chunk.Choices {
+		switch {
+		case choice.Delta.Content != "":
+			outputBuilder.WriteString(choice.Delta.Content)
+		case choice.Message.Content != "":
+			outputBuilder.WriteString(choice.Message.Content)
+		case choice.Text != "":
+			outputBuilder.WriteString(choice.Text)
+		}
+		if choice.FinishReason != "" {
+			*finishReason = choice.FinishReason
+		}
+	}
+
+	return nil
+}
+
+func normalizeQwenOperationName(object string) string {
+	switch object {
+	case "chat.completion.chunk":
+		return "chat.completion"
+	default:
+		return object
+	}
+}
+
+func mergeQwenUsage(dst *request.OpenAIUsage, src struct {
+	InputTokens      int `json:"input_tokens"`
+	OutputTokens     int `json:"output_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+}) {
+	if src.InputTokens > 0 {
+		dst.InputTokens = src.InputTokens
+	}
+	if src.OutputTokens > 0 {
+		dst.OutputTokens = src.OutputTokens
+	}
+	if src.TotalTokens > 0 {
+		dst.TotalTokens = src.TotalTokens
+	}
+	if src.PromptTokens > 0 {
+		dst.PromptTokens = src.PromptTokens
+	}
+	if src.CompletionTokens > 0 {
+		dst.CompletionTokens = src.CompletionTokens
+	}
 }
 
 func extractQwenOperation(req *http.Request) string {

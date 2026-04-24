@@ -45,6 +45,20 @@ const qwenGenerationResponseBody = `{
   "usage":{"input_tokens":12,"output_tokens":10,"total_tokens":22}
 }`
 
+const qwenCompatibleStreamResponseBody = `data: {"id":"chatcmpl-stream-1","object":"chat.completion.chunk","model":"qwen-plus","choices":[{"index":0,"delta":{"content":"eBPF "},"finish_reason":""}]}
+
+data: {"id":"chatcmpl-stream-1","object":"chat.completion.chunk","model":"qwen-plus","choices":[{"index":0,"delta":{"content":"is fast"},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":4,"total_tokens":11}}
+
+data: [DONE]
+`
+
+const qwenGenerationStreamResponseBody = `data: {"request_id":"req-stream-1","output":{"text":"Qwen "}}
+
+data: {"request_id":"req-stream-1","output":{"text":"stream"},"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}
+
+data: [DONE]
+`
+
 func qwenHeaders() http.Header {
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")
@@ -112,6 +126,56 @@ func TestQwenSpan_DashScopeGeneration(t *testing.T) {
 	assert.Equal(t, 12, ai.Usage.GetInputTokens())
 	assert.Equal(t, 10, ai.Usage.GetOutputTokens())
 	assert.JSONEq(t, `{"text":"eBPF is a kernel programmability technology.","finish_reason":"stop"}`, ai.GetOutput())
+}
+
+func TestQwenSpan_CompatibleModeSSE(t *testing.T) {
+	req := makeRequest(t, http.MethodPost, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", qwenCompatibleRequestBody)
+	resp := makePlainResponse(http.StatusOK, http.Header{
+		"Content-Type":             []string{"text/event-stream"},
+		"X-DashScope-Request-Id":   []string{"req-stream-header"},
+		"X-Dashscope-Call-Gateway": []string{"true"},
+	}, qwenCompatibleStreamResponseBody)
+
+	base := &request.Span{}
+	span, ok := QwenSpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Qwen)
+	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
+
+	ai := span.GenAI.Qwen
+	assert.Equal(t, "chatcmpl-stream-1", ai.ID)
+	assert.Equal(t, "chat.completion", ai.OperationName)
+	assert.Equal(t, "qwen-plus", ai.Request.Model)
+	assert.Equal(t, "qwen-plus", ai.ResponseModel)
+	assert.Equal(t, 7, ai.Usage.GetInputTokens())
+	assert.Equal(t, 4, ai.Usage.GetOutputTokens())
+	assert.Contains(t, ai.GetOutput(), "eBPF is fast")
+}
+
+func TestQwenSpan_DashScopeGenerationSSE(t *testing.T) {
+	req := makeRequest(t, http.MethodPost, "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation", qwenGenerationRequestBody)
+	resp := makePlainResponse(http.StatusOK, http.Header{
+		"Content-Type":           []string{"text/event-stream"},
+		"X-DashScope-Request-Id": []string{"req-stream-header"},
+	}, qwenGenerationStreamResponseBody)
+
+	base := &request.Span{}
+	span, ok := QwenSpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Qwen)
+
+	ai := span.GenAI.Qwen
+	assert.Equal(t, "req-stream-1", ai.ID)
+	assert.Equal(t, "generation", ai.OperationName)
+	assert.Equal(t, "qwen-turbo", ai.Request.Model)
+	assert.Equal(t, "qwen-turbo", ai.ResponseModel)
+	assert.Equal(t, 5, ai.Usage.GetInputTokens())
+	assert.Equal(t, 3, ai.Usage.GetOutputTokens())
+	assert.Contains(t, ai.GetOutput(), "Qwen stream")
 }
 
 func TestQwenSpan_IDFallbackFromHeadersWhenBodyMissingID(t *testing.T) {
