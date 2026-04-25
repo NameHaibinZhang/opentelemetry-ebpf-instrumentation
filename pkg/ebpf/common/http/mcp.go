@@ -6,7 +6,6 @@ package ebpfcommon // import "go.opentelemetry.io/obi/pkg/ebpf/common/http"
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 
@@ -69,28 +68,22 @@ type mcpInitializeResult struct {
 	ProtocolVersion string `json:"protocolVersion"`
 }
 
-// MCPSpan detects and parses an MCP JSON-RPC request/response pair.
-// It returns the enriched span and true when the request is a valid MCP call,
-// or the original span and false otherwise.
-func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
-	if req.Method != http.MethodPost {
+// MCPSpanFromParsed detects MCP signals in a pre-parsed JSON-RPC request and
+// enriches the span with MCP-specific attributes. It requires the JSON-RPC
+// request to have been parsed by TryParseJSONRPC first. Returns the original
+// span and false when the request does not carry MCP signals.
+func MCPSpanFromParsed(baseSpan *request.Span, req *http.Request, resp *http.Response, parsed *ParsedJSONRPC) (request.Span, bool) {
+	rpcReq := parsed.request
+
+	// MCP requires an explicit JSON-RPC 2.0 version in the body,
+	// regardless of Content-Type header detection.
+	if rpcReq.JSONRPC != jsonRPCVersion {
 		return *baseSpan, false
 	}
 
 	sessionID := req.Header.Get(mcpSessionHeader)
 	if sessionID == "" && resp != nil && resp.Header != nil {
 		sessionID = resp.Header.Get(mcpSessionHeader)
-	}
-
-	reqB, err := io.ReadAll(req.Body)
-	if err != nil {
-		return *baseSpan, false
-	}
-	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
-
-	rpcReq, err := parseJSONRPCRequest(reqB, false)
-	if err != nil {
-		return *baseSpan, false
 	}
 
 	if _, known := mcpMethods[rpcReq.Method]; !known {
@@ -142,6 +135,17 @@ func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (re
 	}
 
 	return *baseSpan, true
+}
+
+// MCPSpan detects and parses an MCP JSON-RPC request/response pair.
+// It returns the enriched span and true when the request is a valid MCP call,
+// or the original span and false otherwise.
+func MCPSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
+	parsed := TryParseJSONRPC(req)
+	if parsed == nil {
+		return *baseSpan, false
+	}
+	return MCPSpanFromParsed(baseSpan, req, resp, parsed)
 }
 
 // hasMCPProtocolVersion checks whether the params contain a protocolVersion
