@@ -257,7 +257,7 @@ HTTPParsingPolicy defines the default action for http enrichment rules.
 
 | YAML Path | Type | Env Var | Default | Values | Deprecated | Description |
 |---|---|---|---|---|---|---|
-| `ebpf.payload_extraction.http.genai.embedding.enabled` | `boolean` | `OTEL_EBPF_HTTP_EMBEDDING_ENABLED` | `false` |  |  | Enable generic embedding provider (Voyage AI, Cohere, Jina AI) payload extraction and parsing |
+| `ebpf.payload_extraction.http.genai.embedding.enabled` | `boolean` | `OTEL_EBPF_HTTP_GENAI_EMBEDDING_ENABLED` | `false` |  |  | Enable generic embedding provider (Voyage AI, Cohere, Jina AI) payload extraction and parsing |
 
 #### `ebpf.payload_extraction.http.genai.gemini`
 

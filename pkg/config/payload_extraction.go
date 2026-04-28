@@ -124,7 +124,7 @@ type MCPConfig struct {
 
 type EmbeddingProviderConfig struct {
 	// Enable generic embedding provider (Voyage AI, Cohere, Jina AI) payload extraction and parsing
-	Enabled bool `yaml:"enabled" env:"OTEL_EBPF_HTTP_EMBEDDING_ENABLED" validate:"boolean"`
+	Enabled bool `yaml:"enabled" env:"OTEL_EBPF_HTTP_GENAI_EMBEDDING_ENABLED" validate:"boolean"`
 }
 
 type JSONRPCConfig struct {
