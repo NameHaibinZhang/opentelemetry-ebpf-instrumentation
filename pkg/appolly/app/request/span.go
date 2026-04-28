@@ -299,7 +299,17 @@ func (u *OpenAIUsage) GetOutputTokens() int {
 		return u.OutputTokens
 	}
 
-	return u.CompletionTokens
+	if u.CompletionTokens > 0 {
+		return u.CompletionTokens
+	}
+
+	// Embedding responses only report prompt_tokens and total_tokens.
+	// Derive output tokens from the difference.
+	if u.TotalTokens > 0 && u.PromptTokens > 0 {
+		return u.TotalTokens - u.PromptTokens
+	}
+
+	return 0
 }
 
 type OpenAIError struct {
