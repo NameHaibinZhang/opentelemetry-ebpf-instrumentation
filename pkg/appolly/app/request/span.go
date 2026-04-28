@@ -1687,6 +1687,10 @@ func (s *Span) GenAIInputTokens() int {
 		return s.GenAI.Bedrock.Output.InputTokens
 	}
 
+	if s.GenAI.Embedding != nil {
+		return s.GenAI.Embedding.GetInputTokens()
+	}
+
 	return 0
 }
 
@@ -1714,6 +1718,8 @@ func (s *Span) GenAIOutputTokens() int {
 	if s.GenAI.Bedrock != nil {
 		return s.GenAI.Bedrock.Output.OutputTokens
 	}
+
+	// Embedding APIs do not produce output tokens.
 
 	return 0
 }

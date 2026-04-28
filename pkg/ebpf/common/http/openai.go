@@ -54,8 +54,11 @@ func OpenAISpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 	parsedResponse.Request = parsedRequest
 
 	// Override operation name for embedding requests.
-	if req.URL != nil && strings.Contains(req.URL.Path, "/v1/embeddings") {
-		parsedResponse.OperationName = request.EmbeddingOperationName
+	if req.URL != nil {
+		path := strings.TrimSuffix(req.URL.Path, "/")
+		if path == "/v1/embeddings" {
+			parsedResponse.OperationName = request.EmbeddingOperationName
+		}
 	}
 
 	baseSpan.SubType = request.HTTPSubtypeOpenAI

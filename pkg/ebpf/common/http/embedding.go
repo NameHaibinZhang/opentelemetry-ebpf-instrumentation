@@ -43,7 +43,7 @@ func isEmbeddingProvider(req *http.Request) string {
 	path := req.URL.Path
 
 	for _, hp := range embeddingHostPatterns {
-		if strings.HasSuffix(host, hp.hostSuffix) &&
+		if (host == hp.hostSuffix || strings.HasSuffix(host, "."+hp.hostSuffix)) &&
 			strings.HasSuffix(path, hp.pathSuffix) {
 			return hp.provider
 		}
@@ -96,16 +96,11 @@ func EmbeddingSpan(baseSpan *request.Span, req *http.Request, resp *http.Respons
 		}
 	}
 
-	model := parsedRequest.Model
-	if model == "" {
-		model = parsedResponse.Model
-	}
-
 	baseSpan.SubType = request.HTTPSubtypeEmbedding
 	baseSpan.GenAI = &request.GenAI{
 		Embedding: &request.VendorEmbedding{
 			Provider: provider,
-			Model:    model,
+			Model:    parsedRequest.Model,
 			Input:    parsedRequest,
 			Output:   parsedResponse,
 		},
