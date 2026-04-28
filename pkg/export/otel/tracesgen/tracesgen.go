@@ -775,6 +775,7 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 				attrs = append(attrs, semconv.GenAIResponseModel(model))
 			}
 			attrs = append(attrs, semconv.GenAIUsageInputTokens(ai.GetInputTokens()))
+			attrs = append(attrs, semconv.GenAIUsageOutputTokens(ai.GetOutputTokens()))
 			if ai.Input.Dimensions > 0 {
 				attrs = append(attrs, attribute.Int("gen_ai.request.embedding.dimensions", ai.Input.Dimensions))
 			}

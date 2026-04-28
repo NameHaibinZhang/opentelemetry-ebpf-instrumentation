@@ -748,6 +748,15 @@ func (e *VendorEmbedding) GetInputTokens() int {
 	return 0
 }
 
+// GetOutputTokens returns the output token count for embedding requests,
+// derived as total_tokens - prompt_tokens.
+func (e *VendorEmbedding) GetOutputTokens() int {
+	if e.Output.Usage.TotalTokens > 0 && e.Output.Usage.PromptTokens > 0 {
+		return e.Output.Usage.TotalTokens - e.Output.Usage.PromptTokens
+	}
+	return 0
+}
+
 // Span contains the information being submitted by the following nodes in the graph.
 // It enables comfortable handling of data from Go.
 // REMINDER: any attribute here must be also added to the functions SpanOTELGetters
@@ -1719,7 +1728,9 @@ func (s *Span) GenAIOutputTokens() int {
 		return s.GenAI.Bedrock.Output.OutputTokens
 	}
 
-	// Embedding APIs do not produce output tokens.
+	if s.GenAI.Embedding != nil {
+		return s.GenAI.Embedding.GetOutputTokens()
+	}
 
 	return 0
 }
