@@ -131,6 +131,8 @@ static __always_inline void finish_http(http_info_t *info, pid_connection_info_t
         if (info->delayed) {
             bpf_map_delete_elem(&ongoing_http, pid_conn);
         }
+
+        bpf_map_delete_elem(&active_ssl_connections, pid_conn);
     }
 }
 
@@ -231,12 +233,12 @@ static __always_inline void cleanup_http_request_data(pid_connection_info_t *pid
             delete_client_trace_info(pid_conn);
         }
     }
-    bpf_map_delete_elem(&active_ssl_connections, pid_conn);
 }
 
 static __always_inline void terminate_http_request_if_needed(pid_connection_info_t *pid_conn) {
     http_info_t *info = bpf_map_lookup_elem(&ongoing_http, pid_conn);
     cleanup_http_request_data(pid_conn, info);
+    bpf_map_delete_elem(&active_ssl_connections, pid_conn);
 }
 
 static __always_inline void process_http_request(http_info_t *info,
