@@ -103,6 +103,7 @@ const (
 	HTTPSubtypeQwen          = 11 // http + Qwen (DashScope)
 	HTTPSubtypeMCP           = 12 // http + Model Context Protocol
 	HTTPSubtypeEmbedding     = 13 // http + generic embedding provider (Voyage, Cohere, Jina)
+	HTTPSubtypeRerank        = 14 // http + Rerank (Cohere, Jina, Voyage, etc.)
 )
 
 func IsGenAISubtype(subtype int) bool {
@@ -112,7 +113,8 @@ func IsGenAISubtype(subtype int) bool {
 		subtype == HTTPSubtypeQwen ||
 		subtype == HTTPSubtypeAWSBedrock ||
 		subtype == HTTPSubtypeMCP ||
-		subtype == HTTPSubtypeEmbedding
+		subtype == HTTPSubtypeEmbedding ||
+		subtype == HTTPSubtypeRerank
 }
 
 //nolint:cyclop
@@ -276,6 +278,7 @@ type GenAI struct {
 	Bedrock   *VendorBedrock
 	MCP       *MCPCall
 	Embedding *VendorEmbedding
+	Rerank    *VendorRerank
 }
 
 type OpenAIUsage struct {
@@ -767,6 +770,50 @@ func (e *VendorEmbedding) GetOutputTokens() int {
 	return 0
 }
 
+// VendorRerank holds parsed data from a rerank API request/response.
+// Reranking services (Cohere, Jina AI, Voyage AI, etc.) share a similar
+// REST API shape: POST /v1/rerank with a JSON body containing model,
+// query, and documents.  The provider is identified from the request
+// hostname.
+type VendorRerank struct {
+	Input    RerankRequest
+	Output   RerankResponse
+	Provider string
+}
+
+type RerankRequest struct {
+	Model     string          `json:"model"`
+	Query     string          `json:"query"`
+	TopN      int             `json:"top_n"`
+	Documents json.RawMessage `json:"documents"`
+}
+
+type RerankResponse struct {
+	ID      string          `json:"id"`
+	Model   string          `json:"model"`
+	Results json.RawMessage `json:"results"`
+	Usage   RerankUsage     `json:"usage"`
+	Error   *RerankError    `json:"error,omitempty"`
+}
+
+type RerankUsage struct {
+	TotalTokens  int `json:"total_tokens"`
+	PromptTokens int `json:"prompt_tokens"`
+	SearchUnits  int `json:"search_units"`
+}
+
+func (u *RerankUsage) GetInputTokens() int {
+	if u.PromptTokens > 0 {
+		return u.PromptTokens
+	}
+	return u.TotalTokens
+}
+
+type RerankError struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
 // Span contains the information being submitted by the following nodes in the graph.
 // It enables comfortable handling of data from Go.
 // REMINDER: any attribute here must be also added to the functions SpanOTELGetters
@@ -1226,6 +1273,9 @@ func HTTPSpanStatusCode(span *Span) string {
 				if span.GenAI.Bedrock != nil && span.GenAI.Bedrock.Output.ErrorType != "" {
 					return StatusCodeError
 				}
+				if span.GenAI.Rerank != nil && span.GenAI.Rerank.Output.Error != nil && span.GenAI.Rerank.Output.Error.Type != "" {
+					return StatusCodeError
+				}
 			}
 
 			return StatusCodeUnset
@@ -1458,6 +1508,17 @@ func (s *Span) TraceName() string {
 				return op + " " + model
 			}
 			return op
+		}
+
+		if s.Type == EventTypeHTTPClient && s.SubType == HTTPSubtypeRerank && s.GenAI != nil && s.GenAI.Rerank != nil {
+			model := s.GenAI.Rerank.Input.Model
+			if model == "" {
+				model = s.GenAI.Rerank.Output.Model
+			}
+			if model != "" {
+				return "rerank " + model
+			}
+			return "rerank"
 		}
 
 		if s.SubType == HTTPSubtypeJSONRPC && s.JSONRPC != nil {
@@ -1710,6 +1771,10 @@ func (s *Span) GenAIInputTokens() int {
 		return s.GenAI.Embedding.GetInputTokens()
 	}
 
+	if s.GenAI.Rerank != nil {
+		return s.GenAI.Rerank.Output.Usage.GetInputTokens()
+	}
+
 	return 0
 }
 
@@ -1767,6 +1832,9 @@ func (s *Span) GenAIOperationName() string {
 	if s.GenAI.Embedding != nil {
 		return s.GenAI.Embedding.OperationName()
 	}
+	if s.GenAI.Rerank != nil {
+		return "rerank"
+	}
 	return ""
 }
 
@@ -1791,6 +1859,9 @@ func (s *Span) GenAIProviderName() string {
 	}
 	if s.GenAI.Embedding != nil {
 		return s.GenAI.Embedding.Provider
+	}
+	if s.GenAI.Rerank != nil {
+		return s.GenAI.Rerank.Provider
 	}
 	return ""
 }
@@ -1819,6 +1890,9 @@ func (s *Span) GenAIRequestModel() string {
 			return s.GenAI.Embedding.Input.Model
 		}
 		return s.GenAI.Embedding.Model
+	}
+	if s.GenAI.Rerank != nil {
+		return s.GenAI.Rerank.Input.Model
 	}
 	return ""
 }
@@ -1853,6 +1927,12 @@ func (s *Span) GenAIResponseModel() string {
 			return s.GenAI.Embedding.Output.Model
 		}
 		return s.GenAI.Embedding.Model
+	}
+	if s.GenAI.Rerank != nil {
+		if s.GenAI.Rerank.Output.Model != "" {
+			return s.GenAI.Rerank.Output.Model
+		}
+		return s.GenAI.Rerank.Input.Model
 	}
 	return ""
 }
