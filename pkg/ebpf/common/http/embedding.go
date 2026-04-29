@@ -40,7 +40,7 @@ func isEmbeddingProvider(req *http.Request) string {
 	}
 
 	host := extractHostname(req)
-	path := req.URL.Path
+	path := strings.TrimSuffix(req.URL.Path, "/")
 
 	for _, hp := range embeddingHostPatterns {
 		if (host == hp.hostSuffix || strings.HasSuffix(host, "."+hp.hostSuffix)) &&

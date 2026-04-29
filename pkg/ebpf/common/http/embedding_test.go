@@ -154,6 +154,21 @@ func TestIsEmbeddingProvider(t *testing.T) {
 			url:      "https://api.cohere.com/v1/embeddings",
 			expected: "",
 		},
+		{
+			name:     "Voyage AI trailing slash",
+			url:      "https://api.voyageai.com/v1/embeddings/",
+			expected: "voyage",
+		},
+		{
+			name:     "Cohere trailing slash",
+			url:      "https://api.cohere.com/v2/embed/",
+			expected: "cohere",
+		},
+		{
+			name:     "Jina AI trailing slash",
+			url:      "https://api.jina.ai/v1/embeddings/",
+			expected: "jina",
+		},
 	}
 
 	for _, tt := range tests {
