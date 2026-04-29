@@ -556,6 +556,10 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Error.Type))
 				attrs = append(attrs, semconv.ErrorMessage(ai.Error.Message))
 			}
+			// embedding-specific extension attributes
+			if ai.OperationName == request.EmbeddingOperationName && ai.Request.Dimensions > 0 {
+				attrs = append(attrs, attribute.Int("gen_ai.request.embedding.dimensions", ai.Request.Dimensions))
+			}
 		}
 
 		if span.SubType == request.HTTPSubtypeAnthropic && span.GenAI != nil && span.GenAI.Anthropic != nil {
@@ -755,6 +759,30 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 		}
 
 		attrs = append(attrs, mcpAttributes(span)...)
+
+		if span.SubType == request.HTTPSubtypeEmbedding && span.GenAI != nil && span.GenAI.Embedding != nil {
+			ai := span.GenAI.Embedding
+			attrs = append(attrs, semconv.GenAIProviderNameKey.String(ai.Provider))
+			attrs = append(attrs, semconv.GenAIOperationNameKey.String(ai.OperationName()))
+			model := ai.Input.Model
+			if model == "" {
+				model = ai.Model
+			}
+			attrs = append(attrs, semconv.GenAIRequestModel(model))
+			if ai.Output.Model != "" {
+				attrs = append(attrs, semconv.GenAIResponseModel(ai.Output.Model))
+			} else {
+				attrs = append(attrs, semconv.GenAIResponseModel(model))
+			}
+			attrs = append(attrs, semconv.GenAIUsageInputTokens(ai.GetInputTokens()))
+			attrs = append(attrs, semconv.GenAIUsageOutputTokens(ai.GetOutputTokens()))
+			if ai.Input.Dimensions > 0 {
+				attrs = append(attrs, attribute.Int("gen_ai.request.embedding.dimensions", ai.Input.Dimensions))
+			}
+			if count := ai.Input.InputCount(); count > 0 {
+				attrs = append(attrs, attribute.Int("gen_ai.request.embedding.input_count", count))
+			}
+		}
 
 		attrs = append(attrs, jsonRPCAttributes(span)...)
 		attrs = append(attrs, httpEnrichmentAttributes(span)...)
