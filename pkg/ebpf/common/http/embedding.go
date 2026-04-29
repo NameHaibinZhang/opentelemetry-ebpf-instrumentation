@@ -31,10 +31,10 @@ var embeddingHostPatterns = []embeddingHostPattern{
 	{"api.jina.ai", "/v1/embeddings", "jina"},
 }
 
-// isEmbeddingProvider checks whether the request targets a known embedding-only
+// parseEmbeddingProvider checks whether the request targets a known embedding-only
 // provider by matching the hostname and URL path against embeddingHostPatterns.
 // Returns the provider name if matched, or empty string otherwise.
-func isEmbeddingProvider(req *http.Request) string {
+func parseEmbeddingProvider(req *http.Request) string {
 	if req == nil || req.URL == nil {
 		return ""
 	}
@@ -56,7 +56,7 @@ func isEmbeddingProvider(req *http.Request) string {
 // based on hostname and URL path matching, and extracts embedding-specific
 // fields into the span.
 func EmbeddingSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
-	provider := isEmbeddingProvider(req)
+	provider := parseEmbeddingProvider(req)
 	if provider == "" {
 		return *baseSpan, false
 	}
@@ -75,8 +75,8 @@ func EmbeddingSpan(baseSpan *request.Span, req *http.Request, resp *http.Respons
 		req.Body = io.NopCloser(bytes.NewBuffer(reqB))
 	}
 
-	// Response body parsing is best-effort: gzip-compressed or truncated
-	// responses should not prevent provider detection.
+	// Response body parsing is best-effort: truncated responses may fail
+	// to parse but should not prevent provider detection.
 	respB, err := getResponseBody(resp)
 	if err != nil {
 		slog.Debug("EmbeddingSpan: failed to read response body, continuing without it", "provider", provider, "error", err)

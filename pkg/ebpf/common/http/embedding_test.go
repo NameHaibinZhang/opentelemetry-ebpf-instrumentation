@@ -174,7 +174,7 @@ func TestIsEmbeddingProvider(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := makeRequest(t, http.MethodPost, tt.url, "{}")
-			assert.Equal(t, tt.expected, isEmbeddingProvider(req))
+			assert.Equal(t, tt.expected, parseEmbeddingProvider(req))
 		})
 	}
 }
