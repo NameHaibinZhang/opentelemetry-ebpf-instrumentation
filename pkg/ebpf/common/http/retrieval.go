@@ -58,12 +58,12 @@ var retrievalHostPatterns = []retrievalHostPattern{
 	{"weaviate.network", "/v1/graphql", "weaviate"},
 }
 
-var weaviateGraphQLRetrievalSignals = [][]string{
-	{"nearvector", "nearVector"},
-	{"neartext", "nearText"},
-	{"nearobject", "nearObject"},
-	{"hybrid", "Hybrid"},
-	{"bm25", "BM25"},
+var weaviateGraphQLRetrievalSignals = []string{
+	"nearvector",
+	"neartext",
+	"nearobject",
+	"hybrid",
+	"bm25",
 }
 
 // parseRetrievalProvider returns the provider name when the request targets
@@ -88,15 +88,13 @@ func parseRetrievalProvider(req *http.Request) string {
 }
 
 func isWeaviateRetrievalGraphQLQuery(query string) bool {
-	if !strings.Contains(query, "Get {") &&
-		!strings.Contains(query, "Get{") &&
-		!strings.Contains(query, "get {") &&
-		!strings.Contains(query, "get{") {
+	normalized := strings.Join(strings.Fields(strings.ToLower(query)), " ")
+	if !strings.Contains(normalized, "get {") {
 		return false
 	}
 
 	for _, signal := range weaviateGraphQLRetrievalSignals {
-		if strings.Contains(query, signal[0]) || strings.Contains(query, signal[1]) {
+		if strings.Contains(normalized, signal) {
 			return true
 		}
 	}

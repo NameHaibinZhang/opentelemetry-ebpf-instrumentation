@@ -170,6 +170,22 @@ func TestRetrievalSpan_WeaviateGraphQL(t *testing.T) {
 		assert.Equal(t, "weaviate", span.GenAI.Retrieval.Provider)
 	})
 
+	t.Run("retrieval query with newlines and whitespace", func(t *testing.T) {
+		req := makeRequest(t, http.MethodPost,
+			"https://x.weaviate.cloud/v1/graphql",
+			`{"query":"{\n  Get\t{\n    Article(\n      nearText: { concepts: [\"biology\"] }\n      limit: 3\n    ) {\n      title\n    }\n  }\n}"}`,
+		)
+		resp := makePlainResponse(http.StatusOK, http.Header{
+			"Content-Type": []string{"application/json"},
+		}, `{"data":{"Get":{"Article":[]}}}`)
+
+		base := &request.Span{}
+		span, ok := RetrievalSpan(base, req, resp)
+		require.True(t, ok)
+		require.NotNil(t, span.GenAI.Retrieval)
+		assert.Equal(t, "weaviate", span.GenAI.Retrieval.Provider)
+	})
+
 	t.Run("non retrieval query", func(t *testing.T) {
 		req := makeRequest(t, http.MethodPost,
 			"https://x.weaviate.cloud/v1/graphql",
