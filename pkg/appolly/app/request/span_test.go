@@ -1688,6 +1688,41 @@ func TestSpan_GenAIProviderName(t *testing.T) {
 	})
 }
 
+func TestOpenAIInput_GetSystemInstructions(t *testing.T) {
+	t.Run("returns explicit instructions when set", func(t *testing.T) {
+		input := OpenAIInput{
+			Instructions: "You are a coding assistant.",
+			Messages:     json.RawMessage(`[{"role":"system","content":"ignored"}]`),
+		}
+
+		assert.Equal(t, "You are a coding assistant.", input.GetSystemInstructions())
+	})
+
+	t.Run("extracts system and developer messages", func(t *testing.T) {
+		input := OpenAIInput{
+			Messages: json.RawMessage(`[
+				{"role":"system","content":[{"type":"text","text":"You are a concise assistant."}]},
+				{"role":"developer","content":[{"type":"input_text","text":"Always answer in Chinese."}]},
+				{"role":"user","content":[{"type":"text","text":"Hello"}]}
+			]`),
+		}
+
+		got := input.GetSystemInstructions()
+		assert.JSONEq(t, `[
+			{"role":"system","content":[{"type":"text","text":"You are a concise assistant."}]},
+			{"role":"developer","content":[{"type":"input_text","text":"Always answer in Chinese."}]}
+		]`, got)
+	})
+
+	t.Run("returns empty when messages are invalid", func(t *testing.T) {
+		input := OpenAIInput{
+			Messages: json.RawMessage(`{`),
+		}
+
+		assert.Empty(t, input.GetSystemInstructions())
+	})
+}
+
 // Test GenAIRequestModel
 func TestSpan_GenAIRequestModel(t *testing.T) {
 	t.Run("nil GenAI", func(t *testing.T) {

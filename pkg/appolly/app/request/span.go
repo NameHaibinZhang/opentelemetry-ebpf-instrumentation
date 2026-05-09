@@ -383,6 +383,45 @@ func (air *OpenAIInput) GetInput() string {
 	return string(air.Messages)
 }
 
+func (air *OpenAIInput) GetSystemInstructions() string {
+	if air.Instructions != "" {
+		return air.Instructions
+	}
+
+	if len(air.Messages) == 0 {
+		return ""
+	}
+
+	type message struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+
+	var messages []message
+	if err := json.Unmarshal(air.Messages, &messages); err != nil {
+		return ""
+	}
+
+	systemMessages := make([]message, 0, len(messages))
+	for _, msg := range messages {
+		switch msg.Role {
+		case "system", "developer":
+			systemMessages = append(systemMessages, msg)
+		}
+	}
+
+	if len(systemMessages) == 0 {
+		return ""
+	}
+
+	encoded, err := json.Marshal(systemMessages)
+	if err != nil {
+		return ""
+	}
+
+	return string(encoded)
+}
+
 type VendorAnthropic struct {
 	Input  AnthropicRequest
 	Output AnthropicResponse

@@ -4,6 +4,7 @@
 package request
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -544,4 +545,28 @@ func TestSpanOTELGetters_Instance(t *testing.T) {
 	kv := getter(span)
 	assert.Equal(t, string(attr.Instance), string(kv.Key))
 	assert.Equal(t, "instance-42", kv.Value.AsString())
+}
+
+func TestSpanOTELGetters_GenAIInstructions_OpenAIChatMessages(t *testing.T) {
+	getter, ok := spanOTELGetters(attr.GenAIInstructions)
+	require.True(t, ok, "getter should be found for GenAIInstructions")
+
+	span := &Span{
+		Type:    EventTypeHTTPClient,
+		SubType: HTTPSubtypeOpenAI,
+		GenAI: &GenAI{
+			OpenAI: &VendorOpenAI{
+				Request: OpenAIInput{
+					Messages: json.RawMessage(`[
+						{"role":"system","content":[{"type":"text","text":"You are a helpful assistant."}]},
+						{"role":"user","content":[{"type":"text","text":"Hi"}]}
+					]`),
+				},
+			},
+		},
+	}
+
+	kv := getter(span)
+	assert.Equal(t, string(attr.GenAIInstructions), string(kv.Key))
+	assert.JSONEq(t, `[{"role":"system","content":[{"type":"text","text":"You are a helpful assistant."}]}]`, kv.Value.AsString())
 }
