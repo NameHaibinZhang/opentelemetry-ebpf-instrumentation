@@ -58,6 +58,14 @@ var retrievalHostPatterns = []retrievalHostPattern{
 	{"weaviate.network", "/v1/graphql", "weaviate"},
 }
 
+var weaviateGraphQLRetrievalSignals = []string{
+	"nearvector",
+	"neartext",
+	"nearobject",
+	"hybrid",
+	"bm25",
+}
+
 // parseRetrievalProvider returns the provider name when the request targets
 // a known vector retrieval endpoint (host suffix + path suffix match), and
 // an empty string otherwise.
@@ -77,6 +85,73 @@ func parseRetrievalProvider(req *http.Request) string {
 	}
 
 	return ""
+}
+
+func isWeaviateRetrievalGraphQLQuery(query string) bool {
+	lowerQuery := strings.ToLower(query)
+	if !strings.Contains(lowerQuery, "get {") && !strings.Contains(lowerQuery, "get{") {
+		return false
+	}
+
+	for _, signal := range weaviateGraphQLRetrievalSignals {
+		if strings.Contains(lowerQuery, signal) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func weaviateTopLevelQuery(body []byte) string {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	tok, err := dec.Token()
+	if err != nil || tok != json.Delim('{') {
+		return ""
+	}
+
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			break
+		}
+
+		key, ok := keyTok.(string)
+		if !ok {
+			break
+		}
+
+		if key == "query" {
+			var query string
+			if err := dec.Decode(&query); err == nil {
+				return query
+			}
+			return ""
+		}
+
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			break
+		}
+	}
+
+	return ""
+}
+
+func hasWeaviateRetrievalSignals(body []byte) bool {
+	if len(body) == 0 {
+		return false
+	}
+
+	if query := weaviateTopLevelQuery(body); query != "" {
+		return isWeaviateRetrievalGraphQLQuery(query)
+	}
+
+	lowerBody := strings.ToLower(string(body))
+	if !strings.Contains(lowerBody, "\"query\"") {
+		return false
+	}
+
+	return isWeaviateRetrievalGraphQLQuery(lowerBody)
 }
 
 // RetrievalSpan detects vector retrieval (similarity search) API calls to
@@ -100,6 +175,11 @@ func RetrievalSpan(baseSpan *request.Span, req *http.Request, resp *http.Respons
 			slog.Debug("RetrievalSpan: failed to read request body, continuing without it", "provider", provider, "error", err)
 		}
 		req.Body = io.NopCloser(bytes.NewBuffer(reqB))
+	}
+
+	if provider == "weaviate" && !hasWeaviateRetrievalSignals(reqB) {
+		slog.Debug("RetrievalSpan: weaviate GraphQL request without retrieval signals, skipping", "path", requestPath(req), "host", extractHostname(req))
+		return *baseSpan, false
 	}
 
 	respB, err := getResponseBody(resp)
