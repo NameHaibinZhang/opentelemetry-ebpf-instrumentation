@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGoProbesIncludesOpenAIChatCompletionServiceNew(t *testing.T) {
+func TestGoProbes_OpenAIChatCompletionService(t *testing.T) {
 	tracer := &Tracer{}
 
 	probes := tracer.GoProbes()

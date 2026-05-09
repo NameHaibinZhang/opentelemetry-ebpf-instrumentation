@@ -123,7 +123,7 @@ OBI currently documents the following Go library compatibility baselines:
 | `github.com/segmentio/kafka-go` | `>= v0.4.11` |
 | `github.com/IBM/sarama` | `>= 1.37` |
 | `go.mongodb.org/mongo-driver` | `v1: >= v1.10.1; v2: >= v2.0.1` |
-| `github.com/openai/openai-go` | `>= v3.0.0` (`client.Chat.Completions.New`) |
+| `github.com/openai/openai-go/v3` | `>= v3.0.0` (public API: `client.Chat.Completions.New`; instrumented symbol: `(*ChatCompletionService).New`) |
 
 ### Statistical Metrics
 
