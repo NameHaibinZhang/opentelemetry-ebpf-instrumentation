@@ -110,7 +110,7 @@ func getRequestBody(req *http.Request) ([]byte, error) {
 		return body, err
 	}
 
-	if int64(len(body)) > maxCapturedRequestBodyBytes {
+	if len(body) > int(maxCapturedRequestBodyBytes) {
 		body = body[:maxCapturedRequestBodyBytes]
 		req.Body = io.NopCloser(bytes.NewBuffer(body))
 		return body, errRequestBodyTooLarge

@@ -60,6 +60,8 @@ func OpenAISpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 		slog.Debug("failed to parse OpenAI response", "error", err)
 	}
 
+	// Embedding responses report object=list, so prefer the path-derived
+	// embedding operation name over the generic response object value.
 	if operationName := extractOpenAIOperation(req); operationName != "" &&
 		(parsedResponse.OperationName == "" || operationName == request.EmbeddingOperationName) {
 		parsedResponse.OperationName = operationName

@@ -41,7 +41,6 @@ func TestTraceAttributesSelector_OpenAIChatCompletionsAddsMaxTokensAndFinishReas
 	attrs := TraceAttributesSelector(span, map[attr.Name]struct{}{attr.GenAIOutput: {}})
 
 	require.Contains(t, attrs, semconv.GenAIRequestMaxTokens(128))
-	assert.Contains(t, attrs, semconv.GenAIResponseFinishReasons("stop"))
 
 	for _, kv := range attrs {
 		if kv.Key == semconv.GenAIResponseFinishReasonsKey {
