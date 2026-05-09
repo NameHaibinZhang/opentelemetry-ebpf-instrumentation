@@ -48,7 +48,7 @@ const responsesResponseBody = `{
   }
 }`
 
-const completionsRequestBody = `{"messages":[{"role":"system","content":"You are a helpful travel assistant."},{"role":"user","content":"Plan a 6-day luxury trip to London for 3 people with a $4400 budget."}],"model":"gpt-4o-mini","temperature":1.0}`
+const completionsRequestBody = `{"messages":[{"role":"system","content":"You are a helpful travel assistant."},{"role":"user","content":"Plan a 6-day luxury trip to London for 3 people with a $4400 budget."}],"model":"gpt-4o-mini","temperature":1.0,"max_completion_tokens":512}`
 
 const completionsResponseBody = `{
   "id": "chatcmpl-DBTg5Ms2mJhaAhZ56Wq8QSf2djw3S",
@@ -126,6 +126,25 @@ func makePlainResponse(statusCode int, headers http.Header, body string) *http.R
 	}
 }
 
+type openAIPartialReadCloser struct {
+	data []byte
+	err  error
+	read bool
+}
+
+func (p *openAIPartialReadCloser) Read(dst []byte) (int, error) {
+	if p.read {
+		return 0, io.EOF
+	}
+	p.read = true
+	n := copy(dst, p.data)
+	return n, p.err
+}
+
+func (p *openAIPartialReadCloser) Close() error {
+	return nil
+}
+
 func TestOpenAISpan_Responses(t *testing.T) {
 	req := makeRequest(t, http.MethodPost, "http://api.openai.com/v1/responses", responsesRequestBody)
 	resp := makeGzipResponse(t, http.StatusOK, openAIHeaders(), responsesResponseBody)
@@ -174,6 +193,8 @@ func TestOpenAISpan_ChatCompletions(t *testing.T) {
 	// request fields
 	assert.Equal(t, "gpt-4o-mini", ai.Request.Model)
 	assert.NotEmpty(t, ai.Request.Messages)
+	assert.Equal(t, 512, ai.Request.GetMaxTokens())
+	assert.Equal(t, []string{"stop"}, ai.GetFinishReasons())
 }
 
 func TestOpenAISpan_ErrorResponse(t *testing.T) {
@@ -285,6 +306,62 @@ func TestOpenAIInput_GetInput(t *testing.T) {
 	// items fallback
 	inp4 := &request.OpenAIInput{Items: []byte(`[{"item":1}]`)}
 	assert.JSONEq(t, `[{"item":1}]`, inp4.GetInput())
+}
+
+func TestOpenAIInput_GetMaxTokens(t *testing.T) {
+	inp := &request.OpenAIInput{MaxTokens: 128}
+	assert.Equal(t, 128, inp.GetMaxTokens())
+
+	inp2 := &request.OpenAIInput{MaxTokens: 128, MaxCompletionTokens: 256}
+	assert.Equal(t, 256, inp2.GetMaxTokens())
+}
+
+func TestVendorOpenAI_GetFinishReasons(t *testing.T) {
+	ai := &request.VendorOpenAI{
+		Choices: []byte(`[{"finish_reason":"stop"},{"finish_reason":"length"},{"message":{"role":"assistant"}}]`),
+	}
+	assert.Equal(t, []string{"stop", "length"}, ai.GetFinishReasons())
+}
+
+func TestOpenAISpan_UsesPartialRequestBodyWhenReadFails(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://api.openai.com/v1/chat/completions", nil)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = &openAIPartialReadCloser{
+		data: []byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":64`),
+		err:  io.ErrUnexpectedEOF,
+	}
+
+	h := openAIHeaders()
+	h.Del("Content-Encoding")
+	resp := makePlainResponse(http.StatusOK, h, `{"choices":[]}`)
+
+	base := &request.Span{}
+	span, ok := OpenAISpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.OpenAI)
+	assert.Equal(t, "chat.completion", span.GenAI.OpenAI.OperationName)
+	assert.Equal(t, "gpt-4o-mini", span.GenAI.OpenAI.Request.Model)
+	assert.Equal(t, "gpt-4o-mini", span.GenAI.OpenAI.ResponseModel)
+}
+
+func TestOpenAISpan_FallsBackToOperationWhenResponseBodyIsNotJSON(t *testing.T) {
+	req := makeRequest(t, http.MethodPost, "https://api.openai.com/v1/chat/completions", completionsRequestBody)
+	h := openAIHeaders()
+	h.Del("Content-Encoding")
+	resp := makePlainResponse(http.StatusOK, h, "data: [DONE]\n\n")
+
+	base := &request.Span{}
+	span, ok := OpenAISpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.OpenAI)
+	assert.Equal(t, "chat.completion", span.GenAI.OpenAI.OperationName)
+	assert.Equal(t, "gpt-4o-mini", span.GenAI.OpenAI.Request.Model)
+	assert.Equal(t, "gpt-4o-mini", span.GenAI.OpenAI.ResponseModel)
 }
 
 const embeddingsRequestBody = `{"input":"The food was delicious","model":"text-embedding-3-small","dimensions":256}`

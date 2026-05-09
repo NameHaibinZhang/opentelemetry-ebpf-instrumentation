@@ -24,10 +24,16 @@ import (
 // so body enrichment cannot expand a compressed payload beyond the configured
 // userspace budget.
 const maxDecompressedResponseBodyBytes = config.MaxCapturedPayloadBytes
+const maxCapturedRequestBodyBytes = config.MaxCapturedPayloadBytes
 
 var errResponseBodyTooLarge = fmt.Errorf(
 	"response body exceeds decompression limit of %d bytes",
 	maxDecompressedResponseBodyBytes,
+)
+
+var errRequestBodyTooLarge = fmt.Errorf(
+	"request body exceeds capture limit of %d bytes",
+	maxCapturedRequestBodyBytes,
 )
 
 // requestPath extracts the request path from multiple URL representations,
@@ -90,6 +96,27 @@ func getResponseBody(resp *http.Response) ([]byte, error) {
 		body = dec
 	}
 
+	return body, nil
+}
+
+func getRequestBody(req *http.Request) ([]byte, error) {
+	if req == nil || req.Body == nil {
+		return nil, nil
+	}
+
+	body, err := io.ReadAll(io.LimitReader(req.Body, maxCapturedRequestBodyBytes+1))
+	if err != nil {
+		req.Body = io.NopCloser(bytes.NewBuffer(body))
+		return body, err
+	}
+
+	if int64(len(body)) > maxCapturedRequestBodyBytes {
+		body = body[:maxCapturedRequestBodyBytes]
+		req.Body = io.NopCloser(bytes.NewBuffer(body))
+		return body, errRequestBodyTooLarge
+	}
+
+	req.Body = io.NopCloser(bytes.NewBuffer(body))
 	return body, nil
 }
 

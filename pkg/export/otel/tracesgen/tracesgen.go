@@ -553,6 +553,9 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 			}
 			attrs = append(attrs, semconv.GenAIRequestModel(ai.Request.Model))
 			attrs = append(attrs, semconv.GenAIResponseModel(ai.ResponseModel))
+			if maxTokens := ai.Request.GetMaxTokens(); maxTokens > 0 {
+				attrs = append(attrs, semconv.GenAIRequestMaxTokens(maxTokens))
+			}
 			if ai.FrequencyPenalty > 0.0 {
 				attrs = append(attrs, semconv.GenAIRequestFrequencyPenalty(ai.FrequencyPenalty))
 			}
@@ -566,6 +569,9 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 			}
 			attrs = append(attrs, semconv.GenAIUsageInputTokens(ai.Usage.GetInputTokens()))
 			attrs = append(attrs, semconv.GenAIUsageOutputTokens(ai.Usage.GetOutputTokens()))
+			if reasons := ai.GetFinishReasons(); len(reasons) > 0 {
+				attrs = append(attrs, semconv.GenAIResponseFinishReasons(reasons...))
+			}
 			if _, ok := optionalAttrs[attr.GenAIInput]; ok {
 				attrs = append(attrs, semconv.GenAIInputMessagesKey.String(ai.Request.GetInput()))
 			}

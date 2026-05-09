@@ -4,9 +4,7 @@
 package ebpfcommon // import "go.opentelemetry.io/obi/pkg/ebpf/common/http"
 
 import (
-	"bytes"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -28,11 +26,13 @@ func OpenAISpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 		return *baseSpan, false
 	}
 
-	reqB, err := io.ReadAll(req.Body)
-	if err != nil {
+	reqB, err := getRequestBody(req)
+	if err != nil && len(reqB) == 0 {
 		return *baseSpan, false
 	}
-	req.Body = io.NopCloser(bytes.NewBuffer(reqB))
+	if err != nil {
+		slog.Debug("failed to fully read OpenAI request body", "error", err)
+	}
 
 	respB, err := getResponseBody(resp)
 	if err != nil && len(respB) == 0 {
@@ -45,21 +45,33 @@ func OpenAISpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 	if err := json.Unmarshal(reqB, &parsedRequest); err != nil {
 		slog.Debug("failed to parse OpenAI request", "error", err)
 	}
+	if parsedRequest.Model == "" {
+		window := reqB
+		if len(window) > modelSearchWindow {
+			window = window[:modelSearchWindow]
+		}
+		if matches := modelFieldRegexp.FindSubmatch(window); len(matches) == 2 {
+			parsedRequest.Model = strings.TrimSpace(string(matches[1]))
+		}
+	}
 
 	var parsedResponse request.VendorOpenAI
 	if err := json.Unmarshal(respB, &parsedResponse); err != nil {
 		slog.Debug("failed to parse OpenAI response", "error", err)
 	}
 
-	parsedResponse.Request = parsedRequest
-
-	// Override operation name for embedding requests.
-	if req.URL != nil {
-		path := strings.TrimSuffix(req.URL.Path, "/")
-		if path == "/v1/embeddings" {
-			parsedResponse.OperationName = request.EmbeddingOperationName
-		}
+	if operationName := extractOpenAIOperation(req); operationName != "" &&
+		(parsedResponse.OperationName == "" || operationName == request.EmbeddingOperationName) {
+		parsedResponse.OperationName = operationName
 	}
+	if parsedResponse.ResponseModel == "" {
+		parsedResponse.ResponseModel = parsedRequest.Model
+	}
+	if parsedRequest.Model == "" {
+		parsedRequest.Model = parsedResponse.ResponseModel
+	}
+
+	parsedResponse.Request = parsedRequest
 
 	baseSpan.SubType = request.HTTPSubtypeOpenAI
 	baseSpan.GenAI = &request.GenAI{
@@ -67,4 +79,20 @@ func OpenAISpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 	}
 
 	return *baseSpan, true
+}
+
+func extractOpenAIOperation(req *http.Request) string {
+	path := strings.TrimSuffix(requestPath(req), "/")
+	switch {
+	case strings.HasSuffix(path, "/chat/completions"):
+		return "chat.completion"
+	case strings.HasSuffix(path, "/responses"):
+		return "response"
+	case strings.HasSuffix(path, "/embeddings"):
+		return request.EmbeddingOperationName
+	case strings.HasSuffix(path, "/conversations"):
+		return "conversation"
+	default:
+		return ""
+	}
 }

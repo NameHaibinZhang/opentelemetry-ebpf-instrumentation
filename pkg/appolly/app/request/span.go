@@ -340,6 +340,24 @@ type VendorOpenAI struct {
 	Data             json.RawMessage `json:"data"`
 }
 
+func (ai *VendorOpenAI) GetFinishReasons() []string {
+	var choices []struct {
+		FinishReason string `json:"finish_reason"`
+	}
+	if err := json.Unmarshal(ai.Choices, &choices); err != nil {
+		return nil
+	}
+
+	reasons := make([]string, 0, len(choices))
+	for _, choice := range choices {
+		if choice.FinishReason != "" {
+			reasons = append(reasons, choice.FinishReason)
+		}
+	}
+
+	return reasons
+}
+
 func (ai *VendorOpenAI) GetOutput() string {
 	if len(ai.Output) > 0 {
 		return string(ai.Output)
@@ -357,14 +375,24 @@ func (ai *VendorOpenAI) GetOutput() string {
 }
 
 type OpenAIInput struct {
-	Input        string          `json:"input"`
-	Prompt       string          `json:"prompt"`
-	Model        string          `json:"model"`
-	Instructions string          `json:"instructions"`
-	Messages     json.RawMessage `json:"messages"`
-	Items        json.RawMessage `json:"items"`
-	Temperature  float64         `json:"temperature"`
-	Dimensions   int             `json:"dimensions,omitempty"`
+	Input               string          `json:"input"`
+	Prompt              string          `json:"prompt"`
+	Model               string          `json:"model"`
+	Instructions        string          `json:"instructions"`
+	Messages            json.RawMessage `json:"messages"`
+	Items               json.RawMessage `json:"items"`
+	Temperature         float64         `json:"temperature"`
+	MaxTokens           int             `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int             `json:"max_completion_tokens,omitempty"`
+	Dimensions          int             `json:"dimensions,omitempty"`
+}
+
+func (air *OpenAIInput) GetMaxTokens() int {
+	if air.MaxCompletionTokens > 0 {
+		return air.MaxCompletionTokens
+	}
+
+	return air.MaxTokens
 }
 
 func (air *OpenAIInput) GetInput() string {
