@@ -402,7 +402,7 @@ func (air *OpenAIInput) GetSystemInstructions() string {
 		return ""
 	}
 
-	systemMessages := make([]message, 0, len(messages))
+	systemMessages := make([]message, 0, 2)
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system", "developer":
