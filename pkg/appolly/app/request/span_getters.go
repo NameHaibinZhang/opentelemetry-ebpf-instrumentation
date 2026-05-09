@@ -398,7 +398,7 @@ func spanOTELGetters(name attr.Name) (attributes.Getter[*Span, attribute.KeyValu
 	case attr.GenAIInstructions:
 		getter = func(s *Span) attribute.KeyValue {
 			if s.Type == EventTypeHTTPClient && s.SubType == HTTPSubtypeOpenAI && s.GenAI != nil && s.GenAI.OpenAI != nil {
-				return semconv.GenAISystemInstructionsKey.String(s.GenAI.OpenAI.Request.GetSystemInstructions())
+				return semconv.GenAISystemInstructionsKey.String(s.GenAI.OpenAI.Request.Instructions)
 			}
 			if s.Type == EventTypeHTTPClient && s.SubType == HTTPSubtypeAnthropic && s.GenAI != nil && s.GenAI.Anthropic != nil {
 				return semconv.GenAISystemInstructionsKey.String(s.GenAI.Anthropic.Input.System)
@@ -407,7 +407,7 @@ func spanOTELGetters(name attr.Name) (attributes.Getter[*Span, attribute.KeyValu
 				return semconv.GenAISystemInstructionsKey.String(s.GenAI.Gemini.GetSystemInstruction())
 			}
 			if s.Type == EventTypeHTTPClient && s.SubType == HTTPSubtypeQwen && s.GenAI != nil && s.GenAI.Qwen != nil {
-				return semconv.GenAISystemInstructionsKey.String(s.GenAI.Qwen.Request.GetSystemInstructions())
+				return semconv.GenAISystemInstructionsKey.String(s.GenAI.Qwen.Request.Instructions)
 			}
 			if s.Type == EventTypeHTTPClient && s.SubType == HTTPSubtypeAWSBedrock && s.GenAI != nil && s.GenAI.Bedrock != nil {
 				return semconv.GenAISystemInstructionsKey.String(s.GenAI.Bedrock.GetSystemInstruction())

@@ -350,6 +350,10 @@ func (p *Tracer) GoProbes() map[string][]*ebpfcommon.ProbeDesc {
 			Start: p.bpfObjects.ObiUprobeRoundTrip,
 			End:   p.bpfObjects.ObiUprobeRoundTripReturn,
 		}},
+		// OpenAI Go v3 client
+		// Symbol-only registration: request/response telemetry is still produced by
+		// the existing net/http roundTrip probes and OpenAI HTTP parser pipeline.
+		"github.com/openai/openai-go/v3.(*ChatCompletionService).New": {{}},
 		"golang.org/x/net/http2.(*ClientConn).roundTrip": {{ // http2 client after 0.22
 			Start: p.bpfObjects.ObiUprobeHttp2RoundTrip,
 			End:   p.bpfObjects.ObiUprobeRoundTripReturn, // return is the same as for http 1.1
