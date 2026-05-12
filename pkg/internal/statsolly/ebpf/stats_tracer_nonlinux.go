@@ -12,6 +12,7 @@ import (
 
 	"go.opentelemetry.io/obi/pkg/config"
 	"go.opentelemetry.io/obi/pkg/export"
+	"go.opentelemetry.io/obi/pkg/export/attributes"
 )
 
 type StatsFetcher struct{}
@@ -19,7 +20,8 @@ type StatsFetcher struct{}
 type StatsTCPRtt struct {
 	_      structs.HostLayout
 	Flags  uint8
-	Pad    [3]uint8
+	Role   uint8
+	Pad    [2]uint8
 	SrttUs uint32
 	Conn   struct {
 		_      structs.HostLayout
@@ -45,7 +47,7 @@ type StatsTCPFailedConnection struct {
 	}
 }
 
-func NewStatsFetcher(_ *config.EBPFTracer, _ *export.Features) (*StatsFetcher, error) {
+func NewStatsFetcher(_ *config.EBPFTracer, _ *export.Features, _ *attributes.SelectorConfig) (*StatsFetcher, error) {
 	return nil, nil
 }
 
