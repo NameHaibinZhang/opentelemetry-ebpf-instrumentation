@@ -381,6 +381,7 @@ func getDefinitions(
 		},
 		Traces.Section: {
 			Attributes: map[attr.Name]Default{
+				attr.DNSQuestionName:   true,
 				attr.DBQueryText:       false,
 				attr.HTTPUrlQuery:      false,
 				attr.GenAIInput:        false,
@@ -419,7 +420,7 @@ func getDefinitions(
 		DNSLookupDuration.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
-				attr.DNSQuestionName: true,
+				attr.DNSQuestionName: false,
 				attr.ErrorType:       true,
 			},
 		},

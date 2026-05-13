@@ -1061,8 +1061,11 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 			request.ClientAddr(request.SpanHost(span)),
 			request.ServerAddr(request.PeerAsClient(span)),
 			request.ServerPort(span.HostPort),
-			semconv.DNSQuestionName(span.Path),
 			request.DNSAnswers(span.Statement),
+		}
+		// Include DNSQuestionName only when selected via attribute config.
+		if _, ok := optionalAttrs[attr.DNSQuestionName]; ok {
+			attrs = append(attrs, semconv.DNSQuestionName(span.Path))
 		}
 
 		if span.Status != 0 {
