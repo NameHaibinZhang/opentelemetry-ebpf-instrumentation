@@ -4,6 +4,7 @@
 package ebpfcommon
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -216,7 +217,7 @@ data: {"type":"message_stop"}
 
 `
 
-	resp, err := parseAnthropicStream(strings.NewReader(stream))
+	resp, _, err := parseAnthropicStream(strings.NewReader(stream))
 
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -260,4 +261,35 @@ func TestAnthropicSpan_NotAnthropic(t *testing.T) {
 	_, ok := AnthropicSpan(base, req, resp)
 
 	assert.False(t, ok)
+}
+
+func TestAnthropicToolCalls(t *testing.T) {
+	t.Run("single tool_use", func(t *testing.T) {
+		content := json.RawMessage(`[{"type":"tool_use","id":"toolu_01","name":"get_weather","input":{}}]`)
+		result := extractAnthropicToolCalls(content)
+		require.Len(t, result, 1)
+		assert.Equal(t, "toolu_01", result[0].ID)
+		assert.Equal(t, "get_weather", result[0].Name)
+	})
+
+	t.Run("mixed content text and tool_use", func(t *testing.T) {
+		content := json.RawMessage(`[{"type":"text","text":"hello"},{"type":"tool_use","id":"toolu_01","name":"get_weather","input":{}},{"type":"tool_use","id":"toolu_02","name":"get_time","input":{}}]`)
+		result := extractAnthropicToolCalls(content)
+		require.Len(t, result, 2)
+		assert.Equal(t, "toolu_01", result[0].ID)
+		assert.Equal(t, "get_weather", result[0].Name)
+		assert.Equal(t, "toolu_02", result[1].ID)
+		assert.Equal(t, "get_time", result[1].Name)
+	})
+
+	t.Run("no tool calls", func(t *testing.T) {
+		content := json.RawMessage(`[{"type":"text","text":"Hello"}]`)
+		result := extractAnthropicToolCalls(content)
+		assert.Empty(t, result)
+	})
+
+	t.Run("empty content", func(t *testing.T) {
+		assert.Nil(t, extractAnthropicToolCalls(nil))
+		assert.Nil(t, extractAnthropicToolCalls(json.RawMessage{}))
+	})
 }
