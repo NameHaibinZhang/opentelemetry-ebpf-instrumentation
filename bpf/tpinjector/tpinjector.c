@@ -910,7 +910,7 @@ int obi_packet_extender(struct sk_msg_md *msg) {
     if (is_go_grpc_client_conn(&t_ctx->p_conn)) {
         bpf_msg_pull_data(msg, 0, msg->size, 0);
         fill_msg_buffers(msg, &t_ctx->p_conn, &e_key);
-        wrap_http2_traceparent(msg, &t_ctx->p_conn);
+        bpf_tail_call_static(msg, &extender_jump_table, k_tail_detect_h2);
         return SK_PASS;
     }
 
