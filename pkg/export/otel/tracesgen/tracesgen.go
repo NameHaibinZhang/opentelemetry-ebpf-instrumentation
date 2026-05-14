@@ -332,18 +332,22 @@ func genAIToolCallAttributes(toolCalls []request.ToolCall) []attribute.KeyValue 
 	}
 
 	var names []string
+	var ids []string
 	for _, tc := range toolCalls {
 		if tc.Name != "" {
 			names = append(names, tc.Name)
+		}
+		if tc.ID != "" {
+			ids = append(ids, tc.ID)
 		}
 	}
 
 	var attrs []attribute.KeyValue
 	if len(names) > 0 {
-		attrs = append(attrs, attribute.String(string(attr.GenAIToolName), strings.Join(names, ",")))
+		attrs = append(attrs, attribute.StringSlice(string(attr.GenAIToolName), names))
 	}
-	if len(toolCalls) == 1 && toolCalls[0].ID != "" {
-		attrs = append(attrs, attribute.String(string(attr.GenAIToolCallID), toolCalls[0].ID))
+	if len(ids) > 0 {
+		attrs = append(attrs, attribute.StringSlice(string(attr.GenAIToolCallID), ids))
 	}
 	return attrs
 }
@@ -768,6 +772,7 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Error.Type))
 				attrs = append(attrs, semconv.ErrorMessage(ai.Error.Message))
 			}
+			attrs = append(attrs, genAIToolCallAttributes(ai.ToolCalls)...)
 		}
 
 		if span.SubType == request.HTTPSubtypeAWSBedrock && span.GenAI != nil && span.GenAI.Bedrock != nil {

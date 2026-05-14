@@ -347,7 +347,7 @@ type VendorOpenAI struct {
 	Items            json.RawMessage `json:"items"`
 	Metadata         json.RawMessage `json:"metadata"`
 	Data             json.RawMessage `json:"data"`
-	ToolCalls        []ToolCall
+	ToolCalls        []ToolCall      `json:"-"`
 }
 
 func (ai *VendorOpenAI) GetOutput() string {
@@ -396,7 +396,7 @@ func (air *OpenAIInput) GetInput() string {
 type VendorAnthropic struct {
 	Input     AnthropicRequest
 	Output    AnthropicResponse
-	ToolCalls []ToolCall
+	ToolCalls []ToolCall `json:"-"`
 }
 
 type AnthropicRequest struct {
@@ -444,7 +444,7 @@ type VendorGemini struct {
 	Output    GeminiResponse
 	Model     string
 	Operation string
-	ToolCalls []ToolCall
+	ToolCalls []ToolCall `json:"-"`
 }
 
 type GeminiRequest struct {
