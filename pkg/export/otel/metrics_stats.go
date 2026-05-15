@@ -28,6 +28,8 @@ import (
 	"go.opentelemetry.io/obi/pkg/pipe/swarm"
 )
 
+const statScopeName = "stats_ebpf_events"
+
 // StatMetricsConfig extends MetricsConfig for Statistical Metrics
 type StatMetricsConfig struct {
 	Metrics     *otelcfg.MetricsConfig
@@ -64,11 +66,22 @@ func createFilteredStatsResource(hostID string, attrSelector attributes.Selectio
 	return resource.NewWithAttributes(semconv.SchemaURL, attrs...)
 }
 
-func newStatMeterProvider(res *resource.Resource, exporter *sdkmetric.Exporter, interval time.Duration) *metric.MeterProvider {
+func newStatMeterProvider(res *resource.Resource, exporter *sdkmetric.Exporter, interval time.Duration, cfg *otelcfg.MetricsConfig) *metric.MeterProvider {
+	isExponential := cfg.HistogramAggregation == otelcfg.HistogramAggregationExponential
+	if !isExponential && cfg.HistogramAggregation != otelcfg.HistogramAggregationExplicit {
+		smlog().Warn("invalid value for histogram aggregation. Accepted values are: "+
+			string(otelcfg.HistogramAggregationExponential)+", "+string(otelcfg.HistogramAggregationExplicit)+" (default). Using default",
+			"value", cfg.HistogramAggregation)
+	}
 	return metric.NewMeterProvider(
 		metric.WithResource(res),
 		metric.WithReader(metric.NewPeriodicReader(*exporter, metric.WithInterval(interval))),
+		metric.WithView(statHistogramView(attributes.StatTCPRtt.OTEL, cfg.Buckets.StatTCPRttHistogram, isExponential, cfg.ExponentialHistogram)),
 	)
+}
+
+func statHistogramView(metricName string, buckets []float64, isExponential bool, expCfg otelcfg.ExponentialHistogramConfig) metric.View {
+	return newHistogramView(metricName, statScopeName, buckets, isExponential, expCfg)
 }
 
 type statMetricsExporter struct {
@@ -117,7 +130,7 @@ func newStatMetricsExporter(
 	exporter = instrumentMetricsExporter(ctxInfo.Metrics, exporter)
 
 	resource := createFilteredStatsResource(ctxInfo.NodeMeta.HostID, cfg.SelectorCfg.SelectionCfg)
-	provider := newMeterProvider(resource, &exporter, cfg.Metrics.Interval)
+	provider := newStatMeterProvider(resource, &exporter, cfg.Metrics.Interval, cfg.Metrics)
 
 	attrProv, err := attributes.NewAttrSelector(ctxInfo.MetricAttributeGroups, cfg.SelectorCfg)
 	if err != nil {
@@ -126,7 +139,7 @@ func newStatMetricsExporter(
 
 	clock := expire.NewCachedClock(timeNow)
 
-	ebpfEvents := provider.Meter("stats_ebpf_events")
+	ebpfEvents := provider.Meter(statScopeName)
 
 	nme := &statMetricsExporter{
 		clock:     clock,
@@ -139,7 +152,6 @@ func newStatMetricsExporter(
 		tcpRtt, err := ebpfEvents.Float64Histogram(
 			attributes.StatTCPRtt.OTEL,
 			metric2.WithUnit("s"),
-			metric2.WithExplicitBucketBoundaries(0.0005, 0.001, 0.002, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0),
 		)
 		if err != nil {
 			log.Error("creating stats tcp rtt histogram", "error", err)
