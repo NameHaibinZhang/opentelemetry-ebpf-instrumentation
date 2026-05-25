@@ -35,7 +35,7 @@ import (
 	"go.opentelemetry.io/obi/pkg/pipe/msg"
 )
 
-//go:generate $BPF2GO -cc $BPF_CLANG -cflags $BPF_CFLAGS -target amd64,arm64 -type http_request_trace_t -type sql_request_trace_t -type http_info_t -type connection_info_t -type http2_grpc_request_t -type tcp_req_t -type kafka_client_req_t -type kafka_go_req_t -type redis_client_req_t -type tcp_large_buffer_t -type otel_span_t -type mongo_go_client_req_t -type dns_req_t Bpf ../../../bpf/common/common.c -- -I../../../bpf
+//go:generate $BPF2GO -cc $BPF_CLANG -cflags $BPF_CFLAGS -target amd64,arm64 -type http_request_trace_t -type sql_request_trace_t -type http_info_t -type connection_info_t -type http2_grpc_request_t -type tcp_req_t -type kafka_client_req_t -type kafka_go_req_t -type redis_client_req_t -type tcp_large_buffer_t -type otel_span_t -type mongo_go_client_req_t -type dns_req_t -type openai_go_req_t Bpf ../../../bpf/common/common.c -- -I../../../bpf
 
 // HTTPRequestTrace contains information from an HTTP request as directly received from the
 // eBPF layer. This contains low-level C structures for accurate binary read from ring buffer.
@@ -52,6 +52,7 @@ type (
 	GoOTelSpanTrace      BpfOtelSpanT
 	GoMongoClientInfo    BpfMongoGoClientReqT
 	DNSInfo              BpfDnsReqT
+	GoOpenAIInfo         BpfOpenaiGoReqT
 )
 
 // Go mirror of tp_info.h -> enum tp_flags
@@ -73,6 +74,7 @@ const (
 	EventTypeGoMongo        = 14 // EVENT_GO_MONGO - Go MongoDB spans
 	EventTypeFailedConnect  = 15 // EVENT_FAILED_CONNECT - Failed Connections
 	EventTypeDNS            = 16 // EVENT_DNS_REQUEST - DNS events
+	EventTypeGoOpenAIChat   = 17 // EVENT_GO_OPENAI - Go OpenAI chat completion spans
 )
 
 // Kernel-side classification
@@ -424,6 +426,8 @@ func ReadBPFTraceAsSpan(parseCtx *EBPFParseContext, cfg *config.EBPFTracer, reco
 		return ReadFailedConnectIntoSpan(record, filter)
 	case EventTypeDNS:
 		return readDNSEventIntoSpan(parseCtx, record)
+	case EventTypeGoOpenAIChat:
+		return ReadGoOpenAIRequestIntoSpan(record)
 	}
 
 	event, err := ReinterpretCast[HTTPRequestTrace](record.RawSample)

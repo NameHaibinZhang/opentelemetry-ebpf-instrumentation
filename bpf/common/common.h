@@ -24,6 +24,7 @@
 #include <common/tp_info.h>
 
 #include <pid/types/pid_info.h>
+#include <common/openai_enums.h>
 
 enum : u32 {
     k_tcp_max_len = 256,
@@ -46,6 +47,9 @@ enum : u32 {
     k_http_body_max_len = 64,
     k_http_header_max_len = 100,
     k_http_content_type_max_len = 16,
+    k_openai_model_max_len = 64,
+    k_openai_response_id_max_len = 64,
+    k_openai_msg_content_max_len = 256,
 };
 
 enum large_buf_action : u8 {
@@ -281,3 +285,23 @@ typedef struct dns_req {
     unsigned char buf[k_dns_max_len];
     u8 _pad3[4];
 } dns_req_t;
+
+typedef struct openai_go_req {
+    u8 type; // Must be first
+    enum openai_role input_message_role;
+    u8 _pad[6];
+    u64 start_monotime_ns;
+    u64 end_monotime_ns;
+    s64 prompt_tokens;
+    s64 completion_tokens;
+    pid_info pid;
+    u8 _pad2[4];
+    tp_info_t tp;
+    connection_info_t conn;
+    unsigned char request_model[k_openai_model_max_len];
+    unsigned char response_model[k_openai_model_max_len];
+    unsigned char response_id[k_openai_response_id_max_len];
+    unsigned char input_message_content[k_openai_msg_content_max_len];
+    unsigned char output_message_content[k_openai_msg_content_max_len];
+    u8 _pad3[4];
+} openai_go_req_t;

@@ -131,6 +131,17 @@ const (
 	// route harvesting offsets
 	MuxTemplatePos
 	GinFullpathPos
+	// openai
+	OpenAIChatParamsModelPos
+	OpenAIChatParamsMessagesPos
+	OpenAIChatCompletionIDPos
+	OpenAIChatCompletionModelPos
+	OpenAIChatCompletionUsagePos
+	OpenAIChatCompletionChoicesPos
+	OpenAIChatCompletionChoiceMessagePos
+	OpenAIChatCompletionMessageContentPos
+	OpenAICompletionUsageCompletionTokensPos
+	OpenAICompletionUsagePromptTokensPos
 )
 
 //go:embed offsets.json
@@ -499,6 +510,41 @@ var structMembers = map[string]structInfo{
 		lib: "github.com/gin-gonic/gin",
 		fields: map[string]GoOffset{
 			"fullPath": GinFullpathPos,
+		},
+	},
+	"github.com/openai/openai-go/v3.ChatCompletionNewParams": {
+		lib: "github.com/openai/openai-go/v3",
+		fields: map[string]GoOffset{
+			"Model":    OpenAIChatParamsModelPos,
+			"Messages": OpenAIChatParamsMessagesPos,
+		},
+	},
+	"github.com/openai/openai-go/v3.ChatCompletion": {
+		lib: "github.com/openai/openai-go/v3",
+		fields: map[string]GoOffset{
+			"ID":      OpenAIChatCompletionIDPos,
+			"Model":   OpenAIChatCompletionModelPos,
+			"Usage":   OpenAIChatCompletionUsagePos,
+			"Choices": OpenAIChatCompletionChoicesPos,
+		},
+	},
+	"github.com/openai/openai-go/v3.ChatCompletionChoice": {
+		lib: "github.com/openai/openai-go/v3",
+		fields: map[string]GoOffset{
+			"Message": OpenAIChatCompletionChoiceMessagePos,
+		},
+	},
+	"github.com/openai/openai-go/v3.ChatCompletionMessage": {
+		lib: "github.com/openai/openai-go/v3",
+		fields: map[string]GoOffset{
+			"Content": OpenAIChatCompletionMessageContentPos,
+		},
+	},
+	"github.com/openai/openai-go/v3.CompletionUsage": {
+		lib: "github.com/openai/openai-go/v3",
+		fields: map[string]GoOffset{
+			"CompletionTokens": OpenAICompletionUsageCompletionTokensPos,
+			"PromptTokens":     OpenAICompletionUsagePromptTokensPos,
 		},
 	},
 }

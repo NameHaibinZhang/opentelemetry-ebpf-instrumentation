@@ -654,7 +654,14 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 				attrs = append(attrs, openAIAPITypeKey.String(ai.APIType))
 			}
 			if _, ok := optionalAttrs[attr.GenAIInput]; ok {
-				attrs = append(attrs, semconv.GenAIInputMessagesKey.String(ai.Request.GetInput()))
+				// Prefer the raw chat-completions messages array when present so
+				// gen_ai.input.messages reflects the structured conversation
+				// rather than the responses/embedding-style scalar input.
+				if len(ai.Request.Messages) > 0 {
+					attrs = append(attrs, semconv.GenAIInputMessagesKey.String(string(ai.Request.Messages)))
+				} else {
+					attrs = append(attrs, semconv.GenAIInputMessagesKey.String(ai.Request.GetInput()))
+				}
 			}
 			if _, ok := optionalAttrs[attr.GenAIOutput]; ok {
 				if ai.OperationName != request.EmbeddingOperationName {
