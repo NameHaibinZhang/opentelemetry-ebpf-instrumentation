@@ -112,13 +112,23 @@ func (m *Matcher) Run(ctx context.Context) {
 	defer m.Output.Close()
 	m.Log.Debug("starting criteria matcher node")
 	swarms.ForEachInput(ctx, m.Input, m.Log.Debug, func(i []Event[ProcessAttrs]) {
-		m.Log.Debug("filtering processes", "len", len(i))
 		o := m.filter(i)
-		m.Log.Debug("processes matching selection criteria", "len", len(o))
 		if len(o) > 0 {
+			m.Log.Warn("CriteriaMatcher output", "total", len(o),
+				"created", countByType(o, EventCreated), "deleted", countByType(o, EventDeleted))
 			m.Output.Send(o)
 		}
 	})
+}
+
+func countByType(events []Event[ProcessMatch], t WatchEventType) int {
+	n := 0
+	for _, e := range events {
+		if e.Type == t {
+			n++
+		}
+	}
+	return n
 }
 
 func (m *Matcher) filter(events []Event[ProcessAttrs]) []Event[ProcessMatch] {
@@ -152,6 +162,9 @@ func (m *Matcher) evictStaleHistory() []Event[ProcessMatch] {
 	}
 	m.lastDynamicSnapshot = current
 
+	m.Log.Warn("dynamic criteria pointer changed, checking ProcessHistory",
+		"history_size", len(m.ProcessHistory))
+
 	if len(m.ProcessHistory) == 0 {
 		return nil
 	}
@@ -167,6 +180,7 @@ func (m *Matcher) evictStaleHistory() []Event[ProcessMatch] {
 		})
 	}
 	m.ProcessHistory = map[app.PID]ProcessMatch{}
+	m.Log.Warn("evicted all processes from history", "evicted_count", len(evictions))
 	return evictions
 }
 
