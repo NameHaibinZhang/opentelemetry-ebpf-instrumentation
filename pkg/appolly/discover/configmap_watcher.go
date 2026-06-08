@@ -93,18 +93,23 @@ func (w *ConfigMapWatcher) reload(ctx context.Context) {
 	for _, name := range w.configMapNames {
 		cm, err := w.kubeClient.CoreV1().ConfigMaps(w.namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
-			w.log.Debug("failed to get ConfigMap", "name", name, "error", err)
+			w.log.Warn("failed to get ConfigMap", "name", name, "namespace", w.namespace, "error", err)
 			continue
 		}
 
 		raw, ok := cm.Data[configMapDataKey]
 		if !ok {
-			w.log.Debug("ConfigMap has no data key", "name", name, "key", configMapDataKey)
+			keys := make([]string, 0, len(cm.Data))
+			for k := range cm.Data {
+				keys = append(keys, k)
+			}
+			w.log.Warn("ConfigMap has no expected data key", "name", name, "expected_key", configMapDataKey, "available_keys", keys)
 			continue
 		}
 
 		rawContents = append(rawContents, raw)
 		criteria := parseDiscoveryInstrument(raw)
+		w.log.Warn("parsed ConfigMap", "name", name, "raw_length", len(raw), "criteria_count", len(criteria))
 		if len(criteria) > 0 {
 			allCriteria = append(allCriteria, criteria...)
 		}
