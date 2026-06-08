@@ -11,7 +11,9 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
 
@@ -81,6 +83,8 @@ type Matcher struct {
 
 	// tracks dynamic criteria pointer to detect hot-reload updates
 	lastDynamicSnapshot *[]services.Selector
+	// protects ProcessHistory from concurrent access between filter() and watchCriteriaChanges()
+	historyMu sync.Mutex
 }
 
 func (m *Matcher) allCriteria() []services.Selector {
@@ -111,6 +115,11 @@ func (pm ProcessMatch) LogEnricherEnabled() bool {
 func (m *Matcher) Run(ctx context.Context) {
 	defer m.Output.Close()
 	m.Log.Debug("starting criteria matcher node")
+
+	if m.DynamicCriteria != nil {
+		go m.watchCriteriaChanges(ctx)
+	}
+
 	swarms.ForEachInput(ctx, m.Input, m.Log.Debug, func(i []Event[ProcessAttrs]) {
 		o := m.filter(i)
 		if len(o) > 0 {
@@ -119,6 +128,25 @@ func (m *Matcher) Run(ctx context.Context) {
 			m.Output.Send(o)
 		}
 	})
+}
+
+// watchCriteriaChanges monitors the dynamic criteria pointer for changes and
+// proactively evicts ProcessHistory entries, sending delete events downstream.
+// This ensures that removed services get detached even if no new events arrive at the matcher.
+func (m *Matcher) watchCriteriaChanges(ctx context.Context) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if evictions := m.evictStaleHistory(); len(evictions) > 0 {
+				m.Log.Warn("CriteriaMatcher proactive eviction", "deleted", len(evictions))
+				m.Output.Send(evictions)
+			}
+		}
+	}
 }
 
 func countByType(events []Event[ProcessMatch], t WatchEventType) int {
@@ -132,11 +160,14 @@ func countByType(events []Event[ProcessMatch], t WatchEventType) int {
 }
 
 func (m *Matcher) filter(events []Event[ProcessAttrs]) []Event[ProcessMatch] {
+	m.historyMu.Lock()
+	defer m.historyMu.Unlock()
+
 	var matches []Event[ProcessMatch]
 
 	// Check if any previously matched processes no longer match current criteria.
 	// This handles the case where criteria are removed from ConfigMap hot-reload.
-	matches = append(matches, m.evictStaleHistory()...)
+	matches = append(matches, m.evictStaleHistoryLocked()...)
 
 	for _, ev := range events {
 		if ev.Type == EventDeleted {
@@ -153,6 +184,12 @@ func (m *Matcher) filter(events []Event[ProcessAttrs]) []Event[ProcessMatch] {
 }
 
 func (m *Matcher) evictStaleHistory() []Event[ProcessMatch] {
+	m.historyMu.Lock()
+	defer m.historyMu.Unlock()
+	return m.evictStaleHistoryLocked()
+}
+
+func (m *Matcher) evictStaleHistoryLocked() []Event[ProcessMatch] {
 	if m.DynamicCriteria == nil {
 		return nil
 	}
