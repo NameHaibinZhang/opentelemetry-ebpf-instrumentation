@@ -11,6 +11,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/shirou/gopsutil/v4/process"
 
@@ -38,6 +39,7 @@ func criteriaMatcherProvider(
 	output *msg.Queue[[]Event[ProcessMatch]],
 	configCriteria []services.Selector,
 	dynamicSelector *DynamicPIDSelector,
+	dynamicCriteria *atomic.Pointer[[]services.Selector],
 ) swarm.InstanceFunc {
 	instrumenterNamespace, _ := namespaceFetcherFunc(app.PID(osPidFunc()))
 	if dynamicSelector != nil {
@@ -48,6 +50,7 @@ func criteriaMatcherProvider(
 	m := &Matcher{
 		Log:                 slog.With("component", "discover.CriteriaMatcher"),
 		Criteria:            configCriteria,
+		DynamicCriteria:     dynamicCriteria,
 		ExcludeCriteria:     ExcludingCriteria(cfg),
 		LogEnricherCriteria: LogEnricherFindingCriteria(cfg),
 		ProcessHistory:      map[app.PID]ProcessMatch{},
@@ -64,6 +67,7 @@ func criteriaMatcherProvider(
 type Matcher struct {
 	Log                 *slog.Logger
 	Criteria            []services.Selector
+	DynamicCriteria     *atomic.Pointer[[]services.Selector]
 	ExcludeCriteria     []services.Selector
 	LogEnricherCriteria []services.Selector
 	// ProcessHistory keeps track of the processes that have been already matched and submitted for
@@ -74,6 +78,20 @@ type Matcher struct {
 	Output           *msg.Queue[[]Event[ProcessMatch]]
 	Namespace        string
 	HasHostPidAccess bool
+}
+
+func (m *Matcher) allCriteria() []services.Selector {
+	if m.DynamicCriteria == nil {
+		return m.Criteria
+	}
+	p := m.DynamicCriteria.Load()
+	if p == nil || len(*p) == 0 {
+		return m.Criteria
+	}
+	all := make([]services.Selector, 0, len(m.Criteria)+len(*p))
+	all = append(all, m.Criteria...)
+	all = append(all, *p...)
+	return all
 }
 
 // ProcessMatch matches a found process with the first selection criteria it fulfilled.
@@ -122,10 +140,11 @@ func (m *Matcher) alreadyMatched(pid app.PID) bool {
 }
 
 func (m *Matcher) matchCriteria(obj ProcessAttrs, proc *services.ProcessInfo) *ProcessMatch {
-	criteria := make([]services.Selector, 0, len(m.Criteria))
-	for i := range m.Criteria {
-		if m.matchProcess(&obj, proc, m.Criteria[i]) && !m.isExcluded(&obj, proc) {
-			criteria = append(criteria, m.Criteria[i])
+	allCriteria := m.allCriteria()
+	criteria := make([]services.Selector, 0, len(allCriteria))
+	for i := range allCriteria {
+		if m.matchProcess(&obj, proc, allCriteria[i]) && !m.isExcluded(&obj, proc) {
+			criteria = append(criteria, allCriteria[i])
 		}
 	}
 
