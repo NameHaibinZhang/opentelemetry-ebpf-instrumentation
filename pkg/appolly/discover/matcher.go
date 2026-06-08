@@ -78,6 +78,9 @@ type Matcher struct {
 	Output           *msg.Queue[[]Event[ProcessMatch]]
 	Namespace        string
 	HasHostPidAccess bool
+
+	// tracks dynamic criteria pointer to detect hot-reload updates
+	lastDynamicSnapshot *[]services.Selector
 }
 
 func (m *Matcher) allCriteria() []services.Selector {
@@ -120,6 +123,11 @@ func (m *Matcher) Run(ctx context.Context) {
 
 func (m *Matcher) filter(events []Event[ProcessAttrs]) []Event[ProcessMatch] {
 	var matches []Event[ProcessMatch]
+
+	// Check if any previously matched processes no longer match current criteria.
+	// This handles the case where criteria are removed from ConfigMap hot-reload.
+	matches = append(matches, m.evictStaleHistory()...)
+
 	for _, ev := range events {
 		if ev.Type == EventDeleted {
 			if ev, ok := m.filterDeleted(ev.Obj); ok {
@@ -132,6 +140,34 @@ func (m *Matcher) filter(events []Event[ProcessAttrs]) []Event[ProcessMatch] {
 		}
 	}
 	return matches
+}
+
+func (m *Matcher) evictStaleHistory() []Event[ProcessMatch] {
+	if m.DynamicCriteria == nil {
+		return nil
+	}
+	current := m.DynamicCriteria.Load()
+	if current == m.lastDynamicSnapshot {
+		return nil
+	}
+	m.lastDynamicSnapshot = current
+
+	if len(m.ProcessHistory) == 0 {
+		return nil
+	}
+
+	// Criteria changed: evict all from history so they get re-evaluated with fresh metadata
+	var evictions []Event[ProcessMatch]
+	for pid, procMatch := range m.ProcessHistory {
+		m.Log.Warn("criteria changed, detaching process for re-evaluation",
+			"pid", pid, "comm", procMatch.Process.ExePath)
+		evictions = append(evictions, Event[ProcessMatch]{
+			Type: EventDeleted,
+			Obj:  procMatch,
+		})
+	}
+	m.ProcessHistory = map[app.PID]ProcessMatch{}
+	return evictions
 }
 
 func (m *Matcher) alreadyMatched(pid app.PID) bool {

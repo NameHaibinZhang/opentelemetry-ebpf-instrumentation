@@ -36,6 +36,7 @@ type ConfigMapWatcher struct {
 	dynamicCriteria *atomic.Pointer[[]services.Selector]
 	rescanCh        chan<- struct{}
 	lastHash        string
+	lastServices    map[string]struct{}
 	log             *slog.Logger
 }
 
@@ -123,6 +124,12 @@ func (w *ConfigMapWatcher) reload(ctx context.Context) {
 
 	if len(allCriteria) == 0 {
 		w.log.Warn("ConfigMap hot-reload: no instrument criteria found, clearing dynamic criteria")
+		if len(w.lastServices) > 0 {
+			for svc := range w.lastServices {
+				w.log.Warn("ConfigMap hot-reload: service removed", "service", svc)
+			}
+		}
+		w.lastServices = nil
 		empty := make([]services.Selector, 0)
 		w.dynamicCriteria.Store(&empty)
 		w.triggerRescan()
@@ -131,8 +138,13 @@ func (w *ConfigMapWatcher) reload(ctx context.Context) {
 
 	selectors := NormalizeGlobCriteria(allCriteria)
 	w.dynamicCriteria.Store(&selectors)
+
+	currentServices := criteriaServiceNames(allCriteria)
+	w.logServiceChanges(currentServices)
+	w.lastServices = currentServices
+
 	w.log.Warn("ConfigMap hot-reload: updated dynamic discovery criteria",
-		"count", len(selectors), "configmaps", w.configMapNames)
+		"count", len(selectors), "services", serviceSetKeys(currentServices))
 	w.triggerRescan()
 }
 
@@ -170,4 +182,50 @@ func contentHash(contents []string) string {
 		fmt.Fprintf(h, "%s\n", strings.TrimSpace(c))
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func criteriaServiceNames(criteria services.GlobDefinitionCriteria) map[string]struct{} {
+	names := make(map[string]struct{}, len(criteria))
+	for i := range criteria {
+		name := criteriaDisplayName(&criteria[i])
+		names[name] = struct{}{}
+	}
+	return names
+}
+
+func criteriaDisplayName(ga *services.GlobAttributes) string {
+	if ga.Name != "" {
+		return ga.Name
+	}
+	var parts []string
+	for k := range ga.Metadata {
+		parts = append(parts, k)
+	}
+	if len(parts) > 0 {
+		sort.Strings(parts)
+		return strings.Join(parts, ",")
+	}
+	return "<unnamed>"
+}
+
+func (w *ConfigMapWatcher) logServiceChanges(current map[string]struct{}) {
+	for svc := range current {
+		if _, ok := w.lastServices[svc]; !ok {
+			w.log.Warn("ConfigMap hot-reload: service added", "service", svc)
+		}
+	}
+	for svc := range w.lastServices {
+		if _, ok := current[svc]; !ok {
+			w.log.Warn("ConfigMap hot-reload: service removed", "service", svc)
+		}
+	}
+}
+
+func serviceSetKeys(m map[string]struct{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
