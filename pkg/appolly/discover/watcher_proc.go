@@ -239,7 +239,7 @@ func (pa *pollAccounter) runRescanNotify(ctx context.Context, log *slog.Logger) 
 				return
 			}
 			pa.forgetAllPIDs()
-			log.Warn("rescan triggered: cleared tracked processes for full re-discovery")
+			log.Info("rescan triggered: cleared tracked processes for full re-discovery")
 		}
 	}
 }

@@ -116,18 +116,26 @@ func (m *Matcher) Run(ctx context.Context) {
 	defer m.Output.Close()
 	m.Log.Debug("starting criteria matcher node")
 
+	var watcherDone chan struct{}
 	if m.DynamicCriteria != nil {
-		go m.watchCriteriaChanges(ctx)
+		watcherDone = make(chan struct{})
+		go func() {
+			defer close(watcherDone)
+			m.watchCriteriaChanges(ctx)
+		}()
 	}
 
 	swarms.ForEachInput(ctx, m.Input, m.Log.Debug, func(i []Event[ProcessAttrs]) {
 		o := m.filter(i)
 		if len(o) > 0 {
-			m.Log.Warn("CriteriaMatcher output", "total", len(o),
-				"created", countByType(o, EventCreated), "deleted", countByType(o, EventDeleted))
 			m.Output.Send(o)
 		}
 	})
+
+	// Wait for watchCriteriaChanges goroutine to exit before closing Output
+	if watcherDone != nil {
+		<-watcherDone
+	}
 }
 
 // watchCriteriaChanges monitors the dynamic criteria pointer for changes and
@@ -142,7 +150,6 @@ func (m *Matcher) watchCriteriaChanges(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if evictions := m.evictStaleHistory(); len(evictions) > 0 {
-				m.Log.Warn("CriteriaMatcher proactive eviction", "deleted", len(evictions))
 				m.Output.Send(evictions)
 			}
 		}
@@ -199,25 +206,19 @@ func (m *Matcher) evictStaleHistoryLocked() []Event[ProcessMatch] {
 	}
 	m.lastDynamicSnapshot = current
 
-	m.Log.Warn("dynamic criteria pointer changed, checking ProcessHistory",
-		"history_size", len(m.ProcessHistory))
-
 	if len(m.ProcessHistory) == 0 {
 		return nil
 	}
 
-	// Criteria changed: evict all from history so they get re-evaluated with fresh metadata
 	var evictions []Event[ProcessMatch]
 	for pid, procMatch := range m.ProcessHistory {
-		m.Log.Warn("criteria changed, detaching process for re-evaluation",
-			"pid", pid, "comm", procMatch.Process.ExePath)
+		m.Log.Info("criteria changed, detaching process", "pid", pid, "comm", procMatch.Process.ExePath)
 		evictions = append(evictions, Event[ProcessMatch]{
 			Type: EventDeleted,
 			Obj:  procMatch,
 		})
 	}
 	m.ProcessHistory = map[app.PID]ProcessMatch{}
-	m.Log.Warn("evicted all processes from history", "evicted_count", len(evictions))
 	return evictions
 }
 

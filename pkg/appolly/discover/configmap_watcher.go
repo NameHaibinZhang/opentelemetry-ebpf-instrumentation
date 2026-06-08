@@ -67,7 +67,7 @@ func NewConfigMapWatcher(
 
 // Start begins polling ConfigMaps. It blocks until ctx is cancelled.
 func (w *ConfigMapWatcher) Start(ctx context.Context) {
-	w.log.Warn("starting ConfigMap watcher for discovery hot-reload",
+	w.log.Info("starting ConfigMap watcher for discovery hot-reload",
 		"namespace", w.namespace, "configmaps", w.configMapNames, "interval", w.pollInterval)
 
 	// initial load
@@ -110,7 +110,7 @@ func (w *ConfigMapWatcher) reload(ctx context.Context) {
 
 		rawContents = append(rawContents, raw)
 		criteria := parseDiscoveryInstrument(raw)
-		w.log.Warn("parsed ConfigMap", "name", name, "raw_length", len(raw), "criteria_count", len(criteria))
+		w.log.Debug("parsed ConfigMap", "name", name, "raw_length", len(raw), "criteria_count", len(criteria))
 		if len(criteria) > 0 {
 			allCriteria = append(allCriteria, criteria...)
 		}
@@ -123,7 +123,7 @@ func (w *ConfigMapWatcher) reload(ctx context.Context) {
 	w.lastHash = hash
 
 	if len(allCriteria) == 0 {
-		w.log.Warn("ConfigMap hot-reload: no instrument criteria found, clearing dynamic criteria")
+		w.log.Info("ConfigMap hot-reload: no instrument criteria found, clearing dynamic criteria")
 		if len(w.lastServices) > 0 {
 			for svc := range w.lastServices {
 				w.log.Warn("ConfigMap hot-reload: service removed", "service", svc)
@@ -143,7 +143,7 @@ func (w *ConfigMapWatcher) reload(ctx context.Context) {
 	w.logServiceChanges(currentServices)
 	w.lastServices = currentServices
 
-	w.log.Warn("ConfigMap hot-reload: updated dynamic discovery criteria",
+	w.log.Info("ConfigMap hot-reload: updated dynamic discovery criteria",
 		"count", len(selectors), "services", serviceSetKeys(currentServices))
 	w.triggerRescan()
 }

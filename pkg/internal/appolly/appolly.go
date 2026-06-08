@@ -159,13 +159,12 @@ func (i *Instrumenter) FindAndInstrument(ctx context.Context) error {
 
 func (i *Instrumenter) startConfigMapWatcher(ctx context.Context, finder *discover.ProcessFinder) {
 	hrCfg := i.config.Discovery.HotReload
-	slog.Warn("discovery hot-reload config check",
+	slog.Info("discovery hot-reload config",
 		"enabled", hrCfg.Enabled,
 		"namespace", hrCfg.Namespace,
 		"configmaps", hrCfg.ConfigMaps,
 		"poll_interval", hrCfg.PollInterval)
 	if !hrCfg.Enabled {
-		slog.Warn("discovery hot-reload is disabled, skipping ConfigMap watcher")
 		return
 	}
 	if len(hrCfg.ConfigMaps) == 0 {
