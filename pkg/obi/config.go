@@ -829,4 +829,17 @@ func (c *Config) normalize() {
 	if c.NetworkFlows.Enable {
 		c.Metrics.Features |= export.FeatureNetwork
 	}
+	c.normalizeHotReload()
+}
+
+func (c *Config) normalizeHotReload() {
+	hr := &c.Discovery.HotReload
+	if len(hr.ConfigMaps) == 0 {
+		hr.Enabled = true
+		hr.Namespace = "obi-system"
+		hr.ConfigMaps = []string{"arms-obi-discovery", "arms-obi-discovery-default"}
+	}
+	if hr.PollInterval <= 0 {
+		hr.PollInterval = 15 * time.Second
+	}
 }

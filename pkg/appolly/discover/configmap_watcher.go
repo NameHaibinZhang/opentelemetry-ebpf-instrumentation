@@ -66,7 +66,7 @@ func NewConfigMapWatcher(
 
 // Start begins polling ConfigMaps. It blocks until ctx is cancelled.
 func (w *ConfigMapWatcher) Start(ctx context.Context) {
-	w.log.Info("starting ConfigMap watcher for discovery hot-reload",
+	w.log.Warn("starting ConfigMap watcher for discovery hot-reload",
 		"namespace", w.namespace, "configmaps", w.configMapNames, "interval", w.pollInterval)
 
 	// initial load
@@ -117,7 +117,7 @@ func (w *ConfigMapWatcher) reload(ctx context.Context) {
 	w.lastHash = hash
 
 	if len(allCriteria) == 0 {
-		w.log.Info("ConfigMap hot-reload: no instrument criteria found, clearing dynamic criteria")
+		w.log.Warn("ConfigMap hot-reload: no instrument criteria found, clearing dynamic criteria")
 		empty := make([]services.Selector, 0)
 		w.dynamicCriteria.Store(&empty)
 		w.triggerRescan()
@@ -126,7 +126,7 @@ func (w *ConfigMapWatcher) reload(ctx context.Context) {
 
 	selectors := NormalizeGlobCriteria(allCriteria)
 	w.dynamicCriteria.Store(&selectors)
-	w.log.Info("ConfigMap hot-reload: updated dynamic discovery criteria",
+	w.log.Warn("ConfigMap hot-reload: updated dynamic discovery criteria",
 		"count", len(selectors), "configmaps", w.configMapNames)
 	w.triggerRescan()
 }
