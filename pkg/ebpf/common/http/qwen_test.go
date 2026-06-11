@@ -184,7 +184,8 @@ func TestQwenSpan_CompatibleModeRealResponseHeaders(t *testing.T) {
 }
 
 func TestQwenSpan_NotQwen(t *testing.T) {
-	req := makeRequest(t, http.MethodPost, "https://api.openai.com/v1/chat/completions", qwenCompatibleRequestBody)
+	// Non-qwen model on a non-OpenAI-compatible URL without DashScope headers must not be detected as Qwen.
+	req := makeRequest(t, http.MethodPost, "https://api.example.com/v1/unrelated", `{"model":"gpt-4"}`)
 	resp := makePlainResponse(http.StatusOK, http.Header{
 		"Content-Type": []string{"application/json"},
 	}, qwenCompatibleResponseBody)
@@ -241,6 +242,58 @@ func TestQwenSpan_NoToolCalls(t *testing.T) {
 	require.NotNil(t, span.GenAI)
 	require.NotNil(t, span.GenAI.Qwen)
 	assert.Empty(t, span.GenAI.Qwen.ToolCalls)
+}
+
+const qwenSSEResponseBody = "data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1234,\"model\":\"qwen-plus\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n" +
+	"data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1234,\"model\":\"qwen-plus\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":1,\"total_tokens\":6}}\n\n" +
+	"data: [DONE]\n\n"
+
+func TestQwenSpan_OpenAICompatibleEndpoint_QwenModel(t *testing.T) {
+	req := makeRequest(t, http.MethodPost, "http://vllm.internal/v1/chat/completions", qwenCompatibleRequestBody)
+	resp := makePlainResponse(http.StatusOK, http.Header{
+		"Content-Type": []string{"text/event-stream"},
+	}, qwenSSEResponseBody)
+
+	base := &request.Span{}
+	span, ok := QwenSpan(base, req, resp)
+
+	require.True(t, ok)
+	require.NotNil(t, span.GenAI)
+	require.NotNil(t, span.GenAI.Qwen)
+	assert.Equal(t, request.HTTPSubtypeQwen, span.SubType)
+	assert.Equal(t, "chat", span.GenAI.Qwen.OperationName)
+	assert.Equal(t, "qwen-plus", span.GenAI.Qwen.Request.Model)
+}
+
+func TestQwenSpan_OpenAICompatibleEndpoint_NonQwenModel(t *testing.T) {
+	nonQwenBody := `{
+	  "model":"gpt-4",
+	  "messages":[{"role":"user","content":"hi"}]
+	}`
+	req := makeRequest(t, http.MethodPost, "http://vllm.internal/v1/chat/completions", nonQwenBody)
+	resp := makePlainResponse(http.StatusOK, http.Header{
+		"Content-Type": []string{"application/json"},
+	}, qwenCompatibleResponseBody)
+
+	base := &request.Span{}
+	_, ok := QwenSpan(base, req, resp)
+
+	assert.False(t, ok)
+}
+
+func TestQwenSpan_OpenAICompatibleEndpoint_NoModel(t *testing.T) {
+	noModelBody := `{
+	  "messages":[{"role":"user","content":"hi"}]
+	}`
+	req := makeRequest(t, http.MethodPost, "http://vllm.internal/v1/chat/completions", noModelBody)
+	resp := makePlainResponse(http.StatusOK, http.Header{
+		"Content-Type": []string{"application/json"},
+	}, qwenCompatibleResponseBody)
+
+	base := &request.Span{}
+	_, ok := QwenSpan(base, req, resp)
+
+	assert.False(t, ok)
 }
 
 func TestExtractQwenOperation(t *testing.T) {

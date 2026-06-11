@@ -23,13 +23,24 @@ func isQwen(respHeader http.Header) bool {
 }
 
 func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
-	if !isQwen(resp.Header) {
+	headerDetected := isQwen(resp.Header)
+
+	// Fast exit: not detected by headers and URL doesn't match
+	if !headerDetected && !isQwenCompatibleURL(req) {
 		return *baseSpan, false
 	}
 
 	reqB, ok := readHTTPRequestBody("QwenSpan", req, baseSpan)
 	if !ok {
 		return *baseSpan, false
+	}
+
+	// If not detected by headers, verify model name starts with "qwen"
+	if !headerDetected {
+		model := extractModelField(reqB)
+		if !strings.HasPrefix(strings.ToLower(model), "qwen") {
+			return *baseSpan, false
+		}
 	}
 
 	respB, ok := readHTTPResponseBody("QwenSpan", resp, baseSpan)
@@ -92,6 +103,18 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	}
 
 	return *baseSpan, true
+}
+
+// isQwenCompatibleURL checks if the request targets a standard
+// OpenAI-compatible endpoint that might serve Qwen models.
+func isQwenCompatibleURL(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	path := requestPath(req)
+	return strings.Contains(path, "/chat/completions") ||
+		strings.Contains(path, "/completions") ||
+		strings.Contains(path, "/generation")
 }
 
 func extractQwenOperation(req *http.Request) string {
