@@ -49,6 +49,8 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 	response := &request.VendorOpenAI{}
 
 	var finishReason string
+	var role string
+	var contentBuilder strings.Builder
 	// toolCallAccum accumulates tool call fragments by index.
 	type toolCallAccum struct {
 		id   string
@@ -99,6 +101,15 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 				finishReason = *choice.FinishReason
 			}
 
+			// Capture assistant role (typically in the first delta) and
+			// accumulate content fragments to reconstruct the full message.
+			if choice.Delta.Role != "" {
+				role = choice.Delta.Role
+			}
+			if choice.Delta.Content != "" {
+				contentBuilder.WriteString(choice.Delta.Content)
+			}
+
 			// Accumulate tool calls by index.
 			for j := range choice.Delta.ToolCalls {
 				tc := &choice.Delta.ToolCalls[j]
@@ -122,12 +133,26 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 		}
 	}
 
-	// Build the Choices JSON with the aggregated finish_reason so that
-	// VendorOpenAI.GetFinishReasons() works correctly.
-	if finishReason != "" {
-		choicesJSON, err := json.Marshal([]struct {
+	// Build the Choices JSON with the aggregated message content and
+	// finish_reason so that VendorOpenAI.GetFinishReasons() and the GenAI
+	// output normalization (normalizeOpenAIChoices) work correctly.
+	if finishReason != "" || contentBuilder.Len() > 0 {
+		type streamChoice struct {
+			Message struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
-		}{{FinishReason: finishReason}})
+		}
+
+		sc := streamChoice{FinishReason: finishReason}
+		sc.Message.Role = role
+		if sc.Message.Role == "" {
+			sc.Message.Role = "assistant"
+		}
+		sc.Message.Content = contentBuilder.String()
+
+		choicesJSON, err := json.Marshal([]streamChoice{sc})
 		if err == nil {
 			response.Choices = choicesJSON
 		}

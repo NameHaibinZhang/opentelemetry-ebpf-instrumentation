@@ -4,6 +4,7 @@
 package ebpfcommon
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -31,6 +32,11 @@ func TestParseOpenAIStream_CompleteResponse(t *testing.T) {
 	reasons := resp.GetFinishReasons()
 	require.Len(t, reasons, 1)
 	assert.Equal(t, "stop", reasons[0])
+
+	// Verify that the accumulated message content is exposed via Choices and
+	// can be normalized into the semconv output messages format.
+	assertChoiceMessage(t, resp.Choices, "assistant", "Hello world", "stop")
+	assertOutputContains(t, resp.GetOutput(), "Hello world", "stop")
 }
 
 func TestParseOpenAIStream_TruncatedNoDone(t *testing.T) {
@@ -47,8 +53,12 @@ func TestParseOpenAIStream_TruncatedNoDone(t *testing.T) {
 	// No usage in truncated stream.
 	assert.Equal(t, 0, resp.Usage.PromptTokens)
 	assert.Equal(t, 0, resp.Usage.CompletionTokens)
-	// No finish_reason means no Choices JSON set.
+	// No finish_reason in the truncated stream, but partial content must
+	// still be accumulated into Choices so the partial assistant message is
+	// preserved for normalization.
 	assert.Nil(t, resp.GetFinishReasons())
+	assertChoiceMessage(t, resp.Choices, "assistant", "partial", "")
+	assertOutputContains(t, resp.GetOutput(), "partial", "")
 	assert.Empty(t, toolCalls)
 }
 
@@ -112,4 +122,40 @@ func TestParseOpenAIStream_WithUsageInLastChunk(t *testing.T) {
 	reasons := resp.GetFinishReasons()
 	require.Len(t, reasons, 1)
 	assert.Equal(t, "stop", reasons[0])
+
+	assertChoiceMessage(t, resp.Choices, "assistant", "Hi there", "stop")
+	assertOutputContains(t, resp.GetOutput(), "Hi there", "stop")
+}
+
+// assertChoiceMessage decodes the streaming Choices JSON and verifies the
+// aggregated assistant role, content, and finish_reason. This guards against
+// regressions where the SSE parser would drop delta.content fragments.
+func assertChoiceMessage(t *testing.T, raw []byte, role, content, finishReason string) {
+	t.Helper()
+	require.NotNil(t, raw, "choices JSON must be populated")
+
+	var decoded []struct {
+		Message struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	require.Len(t, decoded, 1)
+	assert.Equal(t, role, decoded[0].Message.Role)
+	assert.Equal(t, content, decoded[0].Message.Content)
+	assert.Equal(t, finishReason, decoded[0].FinishReason)
+}
+
+// assertOutputContains validates that VendorOpenAI.GetOutput() produces
+// semconv-shaped output messages that include the aggregated text content
+// (and finish_reason when present).
+func assertOutputContains(t *testing.T, output, content, finishReason string) {
+	t.Helper()
+	require.NotEmpty(t, output, "GetOutput must not be empty")
+	assert.Contains(t, output, content)
+	if finishReason != "" {
+		assert.Contains(t, output, finishReason)
+	}
 }
