@@ -203,7 +203,7 @@ static __always_inline void finish_possible_delayed_http_request(pid_connection_
         return;
     }
     http_info_t *info = bpf_map_lookup_elem(&ongoing_http, pid_conn);
-    if (info && info->delayed) {
+    if (info && info->delayed && !info->is_sse) {
         finish_http(info, pid_conn);
     }
 }
@@ -321,10 +321,39 @@ static __always_inline void process_http_response(http_info_t *info, const unsig
     info->status = status;
 }
 
+static __always_inline bool detect_sse_response(u64 u_buf, int bytes_len) {
+    if (bytes_len < 24) {
+        return false;
+    }
+
+    unsigned char hdr_buf[FULL_BUF_SIZE];
+    if (bpf_probe_read_user(hdr_buf, sizeof(hdr_buf), (void *)u_buf) < 0) {
+        return false;
+    }
+
+    int limit = bytes_len < (int)sizeof(hdr_buf) ? bytes_len : (int)sizeof(hdr_buf);
+    limit -= 12;
+    if (limit < 0) {
+        return false;
+    }
+
+    for (int i = 0; i < 244 && i <= limit; i++) {
+        if (hdr_buf[i] == 'e' && hdr_buf[i + 1] == 'v' && hdr_buf[i + 2] == 'e' &&
+            hdr_buf[i + 3] == 'n' && hdr_buf[i + 4] == 't' && hdr_buf[i + 5] == '-' &&
+            hdr_buf[i + 6] == 's' && hdr_buf[i + 7] == 't' && hdr_buf[i + 8] == 'r' &&
+            hdr_buf[i + 9] == 'e' && hdr_buf[i + 10] == 'a' && hdr_buf[i + 11] == 'm') {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static __always_inline void handle_http_response(unsigned char *small_buf,
                                                  pid_connection_info_t *pid_conn,
                                                  http_info_t *info,
                                                  int orig_len,
+                                                 u64 u_buf,
                                                  lw_thread_t lw_thread) {
     process_http_response(info, small_buf);
     cleanup_http_request_data(pid_conn, info);
@@ -340,6 +369,10 @@ static __always_inline void handle_http_response(unsigned char *small_buf,
     } else {
         bpf_dbg_printk("Delaying finish http for large request, orig_len=%d", orig_len);
         info->delayed = 1;
+        if (detect_sse_response(u_buf, orig_len)) {
+            bpf_dbg_printk("SSE response detected, marking is_sse");
+            info->is_sse = 1;
+        }
     }
 }
 
@@ -779,7 +812,7 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
                                args->direction,
                                k_large_buf_action_init);
         handle_http_response(
-            args->small_buf, &args->pid_conn, info, args->bytes_len, args->lw_thread);
+            args->small_buf, &args->pid_conn, info, args->bytes_len, args->u_buf, args->lw_thread);
     } else if (still_reading(info)) {
         // print here
         http_send_large_buffer(info,

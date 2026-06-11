@@ -35,5 +35,6 @@ typedef struct http_info {
     u8 direction;
     u8 submitted;
     enum event_source_type event_source;
-    u8 _pad[2];
+    u8 is_sse;
+    u8 _pad[1];
 } http_info_t;
