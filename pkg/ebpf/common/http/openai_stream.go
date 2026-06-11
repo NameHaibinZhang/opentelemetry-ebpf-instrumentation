@@ -1,0 +1,149 @@
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package ebpfcommon // import "go.opentelemetry.io/obi/pkg/ebpf/common/http"
+
+import (
+	"bufio"
+	"encoding/json"
+	"io"
+	"strings"
+
+	"go.opentelemetry.io/obi/pkg/appolly/app/request"
+)
+
+type openAIStreamChunk struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Index int `json:"index"`
+		Delta struct {
+			Role      string                 `json:"role"`
+			Content   string                 `json:"content"`
+			ToolCalls []openAIStreamToolCall `json:"tool_calls"`
+		} `json:"delta"`
+		FinishReason *string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+type openAIStreamToolCall struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// parseOpenAIStream parses the SSE stream from OpenAI-compatible APIs (including Qwen/DashScope)
+// and returns the aggregated response with usage statistics and tool calls.
+func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolCall, error) {
+	scanner := bufio.NewScanner(reader)
+	response := &request.VendorOpenAI{}
+
+	var finishReason string
+	// toolCallAccum accumulates tool call fragments by index.
+	type toolCallAccum struct {
+		id   string
+		name string
+		args strings.Builder
+	}
+	var accumulators []toolCallAccum
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data: ")
+
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk openAIStreamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+
+		// Extract model and id from the first chunk that has them.
+		if response.ID == "" && chunk.ID != "" {
+			response.ID = chunk.ID
+		}
+		if response.ResponseModel == "" && chunk.Model != "" {
+			response.ResponseModel = chunk.Model
+		}
+
+		// Extract usage from the chunk that contains it (typically the last one).
+		if chunk.Usage != nil {
+			response.Usage.PromptTokens = chunk.Usage.PromptTokens
+			response.Usage.CompletionTokens = chunk.Usage.CompletionTokens
+			response.Usage.TotalTokens = chunk.Usage.TotalTokens
+		}
+
+		// Process choices.
+		for i := range chunk.Choices {
+			choice := &chunk.Choices[i]
+
+			// Track finish reason from the last choice that reports one.
+			if choice.FinishReason != nil && *choice.FinishReason != "" {
+				finishReason = *choice.FinishReason
+			}
+
+			// Accumulate tool calls by index.
+			for j := range choice.Delta.ToolCalls {
+				tc := &choice.Delta.ToolCalls[j]
+				idx := tc.Index
+
+				// Grow the accumulator slice as needed.
+				for len(accumulators) <= idx {
+					accumulators = append(accumulators, toolCallAccum{})
+				}
+
+				if tc.ID != "" {
+					accumulators[idx].id = tc.ID
+				}
+				if tc.Function.Name != "" {
+					accumulators[idx].name = tc.Function.Name
+				}
+				if tc.Function.Arguments != "" {
+					accumulators[idx].args.WriteString(tc.Function.Arguments)
+				}
+			}
+		}
+	}
+
+	// Build the Choices JSON with the aggregated finish_reason so that
+	// VendorOpenAI.GetFinishReasons() works correctly.
+	if finishReason != "" {
+		choicesJSON, err := json.Marshal([]struct {
+			FinishReason string `json:"finish_reason"`
+		}{{FinishReason: finishReason}})
+		if err == nil {
+			response.Choices = choicesJSON
+		}
+	}
+
+	// Build the final tool calls list.
+	var toolCalls []request.ToolCall
+	for i := range accumulators {
+		if accumulators[i].name == "" {
+			continue
+		}
+		toolCalls = append(toolCalls, request.ToolCall{
+			ID:   accumulators[i].id,
+			Name: accumulators[i].name,
+		})
+	}
+
+	return response, toolCalls, nil
+}

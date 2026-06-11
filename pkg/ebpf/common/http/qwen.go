@@ -4,6 +4,7 @@
 package ebpfcommon // import "go.opentelemetry.io/obi/pkg/ebpf/common/http"
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -39,19 +40,33 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	slog.Debug("Qwen", "request", string(reqB), "response", string(respB))
 
 	parsedRequest := parseOpenAIInput(reqB)
-	parsedResponse := parseVendorOpenAI(respB)
+	var parsedResponse request.VendorOpenAI
+	var toolCalls []request.ToolCall
 
-	if parsedResponse.ID == "" {
-		var responseID struct {
-			RequestID string `json:"request_id"`
+	if len(respB) > 0 && respB[0] == '{' {
+		parsedResponse = parseVendorOpenAI(respB)
+		toolCalls = extractToolCalls(parsedResponse.Choices)
+
+		// Qwen-specific: try to extract request_id from response body
+		if parsedResponse.ID == "" {
+			var responseID struct {
+				RequestID string `json:"request_id"`
+			}
+			if err := json.Unmarshal(respB, &responseID); err == nil {
+				parsedResponse.ID = responseID.RequestID
+			}
 		}
-		if err := json.Unmarshal(respB, &responseID); err == nil {
-			parsedResponse.ID = responseID.RequestID
+	} else {
+		// SSE stream response (Qwen uses OpenAI-compatible SSE format)
+		reader := bytes.NewReader(respB)
+		if streamResponse, tc, err := parseOpenAIStream(reader); err == nil {
+			parsedResponse = *streamResponse
+			toolCalls = tc
 		}
 	}
 
+	// Fallback: try to get request ID from response headers
 	if parsedResponse.ID == "" {
-		// Fall back to response headers when body capture is partial/truncated.
 		for _, headerName := range []string{"X-DashScope-Request-Id", "X-Request-Id"} {
 			if headerValue := strings.TrimSpace(resp.Header.Get(headerName)); headerValue != "" {
 				parsedResponse.ID = headerValue
@@ -69,7 +84,7 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	}
 
 	parsedResponse.Request = parsedRequest
-	parsedResponse.ToolCalls = extractToolCalls(parsedResponse.Choices)
+	parsedResponse.ToolCalls = toolCalls
 
 	baseSpan.SubType = request.HTTPSubtypeQwen
 	baseSpan.GenAI = &request.GenAI{

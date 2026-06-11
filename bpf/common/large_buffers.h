@@ -24,7 +24,7 @@ enum {
     // Maximum valid value for each protocol's *_max_captured_bytes volatile variable.
     // These must equal the lte= validation values in EBPFBufferSizes (pkg/config/ebpf_tracer.go),
     // which enforces the same ceiling at configuration time.
-    k_large_buf_max_http_captured_bytes = 1 << 16,
+    k_large_buf_max_http_captured_bytes = 1 << 18, // 256KB for HTTP (GenAI large payloads)
     k_large_buf_max_mysql_captured_bytes = 1 << 16,
     k_large_buf_max_postgres_captured_bytes = 1 << 16,
     k_large_buf_max_kafka_captured_bytes = 1 << 16,
