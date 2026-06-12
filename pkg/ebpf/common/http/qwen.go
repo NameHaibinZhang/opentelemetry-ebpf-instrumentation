@@ -48,9 +48,18 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 		return *baseSpan, false
 	}
 
-	slog.Debug("Qwen", "request", string(reqB), "response", string(respB))
+	slog.Debug("Qwen",
+		"reqBodyLen", len(reqB),
+		"respBodyLen", len(respB),
+		"request", string(reqB),
+	)
 
 	parsedRequest := parseOpenAIInput(reqB)
+	slog.Debug("Qwen parsed request",
+		"model", parsedRequest.Model,
+		"hasMessages", len(parsedRequest.Messages) > 0,
+		"stream", parsedRequest.Stream,
+	)
 	var parsedResponse request.VendorOpenAI
 	var toolCalls []request.ToolCall
 
@@ -93,6 +102,15 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	if parsedRequest.Model == "" {
 		parsedRequest.Model = parsedResponse.ResponseModel
 	}
+
+	slog.Debug("Qwen parsed response",
+		"id", parsedResponse.ID,
+		"model", parsedResponse.ResponseModel,
+		"inputTokens", parsedResponse.Usage.GetInputTokens(),
+		"outputTokens", parsedResponse.Usage.GetOutputTokens(),
+		"hasChoices", len(parsedResponse.Choices) > 0,
+		"hasMessages", len(parsedRequest.Messages) > 0,
+	)
 
 	parsedResponse.Request = parsedRequest
 	parsedResponse.ToolCalls = toolCalls
