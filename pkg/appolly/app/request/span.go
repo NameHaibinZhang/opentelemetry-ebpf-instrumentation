@@ -2114,6 +2114,32 @@ func (s *Span) GenAIOperationName() string {
 	return ""
 }
 
+func genAISpanKindFromOp(operationName string) string {
+	switch operationName {
+	case "chat", "text_completion", "generate_content", "generation",
+		"invoke_model", "conversation", "chatkit.session", "chatkit.thread":
+		return "LLM"
+	case "embeddings":
+		return "EMBEDDING"
+	case "execute_tool":
+		return "TOOL"
+	case "retrieval":
+		return "RETRIEVER"
+	case "rerank":
+		return "RERANKER"
+	default:
+		return "LLM"
+	}
+}
+
+func (s *Span) GenAISpanKind() string {
+	op := s.GenAIOperationName()
+	if op == "" {
+		return ""
+	}
+	return genAISpanKindFromOp(op)
+}
+
 func (s *Span) GenAIProviderName() string {
 	if s.GenAI == nil {
 		return ""

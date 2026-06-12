@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -277,6 +278,15 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 	)
 
 	slog.Debug("Event", "traceID", event.Tp.TraceId, "conn", event.ConnInfo, "buf", event.Buf[:])
+
+	if parseCtx != nil && parseCtx.protocolDebug {
+		evType := "SERVER"
+		if isClient {
+			evType = "CLIENT"
+		}
+		fmt.Printf(">>> HTTPInfoEventToSpan: type=%s traceID=%x spanID=%x parentID=%x pid=%d\n",
+			evType, event.Tp.TraceId, event.Tp.SpanId, event.Tp.ParentId, event.Pid.HostPid)
+	}
 
 	if event.HasLargeBuffers == 1 {
 		b, ok := extractTCPLargeBuffer(parseCtx, event.Tp.TraceId, packetTypeRequest, directionByPacketType(packetTypeRequest, isClient), event.ConnInfo, ProtocolTypeHTTP)

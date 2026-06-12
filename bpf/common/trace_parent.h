@@ -30,6 +30,8 @@
 #include <maps/server_traces.h>
 #include <maps/tp_info_mem.h>
 
+#include <shared/obi_ctx.h>
+
 static __always_inline void trace_key_from_pid_tid(trace_key_t *t_key) {
     task_tid(&t_key->p_key);
     java_vt_translate_tid(&t_key->p_key);
@@ -330,6 +332,29 @@ static __always_inline tp_info_pid_t *find_parent_trace(const pid_connection_inf
     if (conn_t_key) {
         bpf_dbg_printk("Found parent trace for connection through connection lookup");
         return bpf_map_lookup_elem(&server_traces, &conn_t_key->t_key);
+    }
+
+    // Last resort: check the per-thread trace context (obi_ctx).
+    // Single-threaded async frameworks (Python asyncio, Node.js) share one tid
+    // across all requests, so server_traces entries can be invalidated by
+    // concurrent request processing on the same thread. obi_ctx stores the
+    // most recent server trace context per pid_tgid and survives those races.
+    obi_ctx_info_t *obi = obi_ctx__get(pid_tgid);
+    if (obi && valid_trace(obi->trace_id)) {
+        tp_info_pid_t *tp_p = (tp_info_pid_t *)tp_info_backup_mem();
+        if (tp_p) {
+            __builtin_memcpy(tp_p->tp.trace_id, obi->trace_id, TRACE_ID_SIZE_BYTES);
+            __builtin_memcpy(tp_p->tp.span_id, obi->span_id, SPAN_ID_SIZE_BYTES);
+            __builtin_memset(tp_p->tp.parent_id, 0, sizeof(tp_p->tp.parent_id));
+            tp_p->tp.ts = bpf_ktime_get_ns();
+            tp_p->tp.flags = 1;
+            tp_p->valid = 1;
+            tp_p->written = 0;
+            tp_p->pid = pid_from_pid_tgid(pid_tgid);
+            tp_p->req_type = EVENT_HTTP_REQUEST;
+            bpf_dbg_printk("Found parent trace via obi_ctx for pid_tgid=%llx", pid_tgid);
+            return tp_p;
+        }
     }
 
     return 0;
