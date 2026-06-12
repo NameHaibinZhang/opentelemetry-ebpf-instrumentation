@@ -34,7 +34,7 @@ func TestParseOpenAIStream_CompleteResponse(t *testing.T) {
 
 	// Verify that the accumulated message content is exposed via Choices and
 	// can be normalized into the semconv output messages format.
-	assertChoiceMessage(t, resp.Choices,"Hello world", "stop")
+	assertChoiceMessage(t, resp.Choices, "Hello world", "stop")
 	assertOutputContains(t, resp.GetOutput(), "Hello world", "stop")
 }
 
@@ -55,7 +55,7 @@ func TestParseOpenAIStream_TruncatedNoDone(t *testing.T) {
 	// still be accumulated into Choices so the partial assistant message is
 	// preserved for normalization.
 	assert.Nil(t, resp.GetFinishReasons())
-	assertChoiceMessage(t, resp.Choices,"partial", "")
+	assertChoiceMessage(t, resp.Choices, "partial", "")
 	assertOutputContains(t, resp.GetOutput(), "partial", "")
 	assert.Empty(t, toolCalls)
 }
@@ -118,7 +118,7 @@ func TestParseOpenAIStream_WithUsageInLastChunk(t *testing.T) {
 	require.Len(t, reasons, 1)
 	assert.Equal(t, "stop", reasons[0])
 
-	assertChoiceMessage(t, resp.Choices,"Hi there", "stop")
+	assertChoiceMessage(t, resp.Choices, "Hi there", "stop")
 	assertOutputContains(t, resp.GetOutput(), "Hi there", "stop")
 }
 
@@ -138,7 +138,7 @@ func TestParseOpenAIStream_InputOutputTokens(t *testing.T) {
 	assert.Equal(t, 3, resp.Usage.GetOutputTokens())
 	assert.Empty(t, toolCalls)
 
-	assertChoiceMessage(t, resp.Choices,"hi", "stop")
+	assertChoiceMessage(t, resp.Choices, "hi", "stop")
 }
 
 func TestParseOpenAIStream_MixedTokenFields(t *testing.T) {
