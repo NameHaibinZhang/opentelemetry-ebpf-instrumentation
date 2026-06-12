@@ -61,6 +61,8 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 		args strings.Builder
 	}
 	var accumulators []toolCallAccum
+	var chunkCount int
+	var reachedDone bool
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -72,6 +74,7 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 		data := strings.TrimPrefix(line, "data: ")
 
 		if data == "[DONE]" {
+			reachedDone = true
 			break
 		}
 
@@ -79,6 +82,7 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
 		}
+		chunkCount++
 
 		// Extract model and id from the first chunk that has them.
 		if response.ID == "" && chunk.ID != "" {
@@ -181,6 +185,17 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 			Name: accumulators[i].name,
 		})
 	}
+
+	slog.Warn("parseOpenAIStream summary",
+		"chunkCount", chunkCount,
+		"reachedDone", reachedDone,
+		"id", response.ID,
+		"model", response.ResponseModel,
+		"promptTokens", response.Usage.PromptTokens,
+		"completionTokens", response.Usage.CompletionTokens,
+		"contentLen", contentBuilder.Len(),
+		"finishReason", finishReason,
+	)
 
 	return response, toolCalls, nil
 }

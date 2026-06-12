@@ -283,7 +283,7 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 		if ok {
 			requestBuffer = b
 		} else {
-			slog.Debug("missing large buffer for HTTP request", "traceID", event.Tp.TraceId, "conn", event.ConnInfo, "packetType", packetTypeRequest)
+			slog.Warn("missing large buffer for HTTP request, falling back to inline buf", "traceID", event.Tp.TraceId, "inlineBufLen", len(event.Buf))
 			requestBuffer = largebuf.NewLargeBufferFrom(event.Buf[:])
 		}
 
@@ -292,8 +292,17 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 			responseBuffer = b
 			hasResponse = true
 		} else {
-			slog.Debug("missing large buffer for HTTP response", "traceID", event.Tp.TraceId, "conn", event.ConnInfo, "packetType", packetTypeResponse)
+			slog.Warn("missing large buffer for HTTP response", "traceID", event.Tp.TraceId)
 		}
+
+		slog.Warn("HTTPInfoEventToSpan large buffers",
+			"hasLargeBuffers", event.HasLargeBuffers,
+			"isClient", isClient,
+			"reqBufLen", requestBuffer.Len(),
+			"hasResponse", hasResponse,
+			"respBufLen", func() int { if responseBuffer != nil { return responseBuffer.Len() }; return 0 }(),
+			"ssl", event.Ssl,
+		)
 	} else {
 		requestBuffer = largebuf.NewLargeBufferFrom(event.Buf[:])
 	}

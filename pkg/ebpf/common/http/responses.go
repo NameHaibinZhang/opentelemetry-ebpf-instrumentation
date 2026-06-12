@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -63,6 +64,14 @@ func requestPath(req *http.Request) string {
 // if it's encoded in compressed format, it tries to decompress
 func getResponseBody(resp *http.Response) ([]byte, error) {
 	respB, readErr := io.ReadAll(resp.Body)
+	slog.Warn("getResponseBody",
+		"bodyLen", len(respB),
+		"readErr", readErr,
+		"contentLength", resp.ContentLength,
+		"transferEncoding", resp.TransferEncoding,
+		"contentEncoding", resp.Header.Get("Content-Encoding"),
+		"contentType", resp.Header.Get("Content-Type"),
+	)
 	if readErr != nil && len(respB) == 0 {
 		return nil, readErr
 	}
