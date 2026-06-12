@@ -29,6 +29,8 @@ type openAIStreamChunk struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
+		InputTokens      int `json:"input_tokens"`
+		OutputTokens     int `json:"output_tokens"`
 	} `json:"usage"`
 }
 
@@ -90,6 +92,8 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 			response.Usage.PromptTokens = chunk.Usage.PromptTokens
 			response.Usage.CompletionTokens = chunk.Usage.CompletionTokens
 			response.Usage.TotalTokens = chunk.Usage.TotalTokens
+			response.Usage.InputTokens = chunk.Usage.InputTokens
+			response.Usage.OutputTokens = chunk.Usage.OutputTokens
 		}
 
 		// Process choices.

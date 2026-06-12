@@ -218,7 +218,75 @@ func parseOpenAIInput(body []byte) request.OpenAIInput {
 	if parsed.Model == "" {
 		parsed.Model = extractModelField(body)
 	}
+	if len(parsed.Messages) == 0 && len(body) > 0 {
+		parsed.Messages = extractJSONRawField(body, "messages")
+	}
 	return parsed
+}
+
+// extractJSONRawField extracts a top-level JSON array or object value for
+// the given field name using bracket matching. This is a fallback for when
+// json.Unmarshal fails on truncated JSON but the target field's value is
+// complete within the captured bytes.
+func extractJSONRawField(body []byte, field string) json.RawMessage {
+	key := `"` + field + `"`
+	idx := bytes.Index(body, []byte(key))
+	if idx < 0 {
+		return nil
+	}
+
+	// Skip past the key and the colon separator.
+	rest := body[idx+len(key):]
+	i := 0
+	for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t' || rest[i] == '\n' || rest[i] == '\r' || rest[i] == ':') {
+		i++
+	}
+	if i >= len(rest) {
+		return nil
+	}
+
+	open := rest[i]
+	var close byte
+	switch open {
+	case '[':
+		close = ']'
+	case '{':
+		close = '}'
+	default:
+		return nil
+	}
+
+	depth := 0
+	inString := false
+	escaped := false
+	for j := i; j < len(rest); j++ {
+		ch := rest[j]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		if ch == open {
+			depth++
+		} else if ch == close {
+			depth--
+			if depth == 0 {
+				return json.RawMessage(rest[i : j+1])
+			}
+		}
+	}
+
+	return nil
 }
 
 func parseVendorOpenAI(body []byte) request.VendorOpenAI {

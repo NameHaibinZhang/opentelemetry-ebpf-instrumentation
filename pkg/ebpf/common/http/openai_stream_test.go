@@ -127,6 +127,41 @@ func TestParseOpenAIStream_WithUsageInLastChunk(t *testing.T) {
 	assertOutputContains(t, resp.GetOutput(), "Hi there", "stop")
 }
 
+func TestParseOpenAIStream_InputOutputTokens(t *testing.T) {
+	stream := "data: {\"id\":\"chatcmpl-dash\",\"object\":\"chat.completion.chunk\",\"model\":\"qwen-plus\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"input_tokens\":15,\"output_tokens\":3,\"total_tokens\":18}}\n\n" +
+		"data: [DONE]\n"
+
+	resp, toolCalls, err := parseOpenAIStream(strings.NewReader(stream))
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, "chatcmpl-dash", resp.ID)
+	assert.Equal(t, "qwen-plus", resp.ResponseModel)
+	assert.Equal(t, 15, resp.Usage.InputTokens)
+	assert.Equal(t, 3, resp.Usage.OutputTokens)
+	assert.Equal(t, 18, resp.Usage.TotalTokens)
+	assert.Equal(t, 15, resp.Usage.GetInputTokens())
+	assert.Equal(t, 3, resp.Usage.GetOutputTokens())
+	assert.Empty(t, toolCalls)
+
+	assertChoiceMessage(t, resp.Choices, "assistant", "hi", "stop")
+}
+
+func TestParseOpenAIStream_MixedTokenFields(t *testing.T) {
+	stream := "data: {\"id\":\"chatcmpl-mix\",\"model\":\"qwen-plus\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12,\"input_tokens\":10,\"output_tokens\":2}}\n\n" +
+		"data: [DONE]\n"
+
+	resp, _, err := parseOpenAIStream(strings.NewReader(stream))
+
+	require.NoError(t, err)
+	assert.Equal(t, 10, resp.Usage.PromptTokens)
+	assert.Equal(t, 2, resp.Usage.CompletionTokens)
+	assert.Equal(t, 10, resp.Usage.InputTokens)
+	assert.Equal(t, 2, resp.Usage.OutputTokens)
+	assert.Equal(t, 10, resp.Usage.GetInputTokens())
+	assert.Equal(t, 2, resp.Usage.GetOutputTokens())
+}
+
 // assertChoiceMessage decodes the streaming Choices JSON and verifies the
 // aggregated assistant role, content, and finish_reason. This guards against
 // regressions where the SSE parser would drop delta.content fragments.
