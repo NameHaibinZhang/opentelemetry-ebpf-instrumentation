@@ -873,6 +873,47 @@ type RerankRequest struct {
 	Query     string          `json:"query"`
 	TopN      int             `json:"top_n"`
 	Documents json.RawMessage `json:"documents"`
+	// DashScope nests query/documents under "input" and top_n under "parameters".
+	DashScopeInput *struct {
+		Query     string          `json:"query"`
+		Documents json.RawMessage `json:"documents"`
+	} `json:"input,omitempty"`
+	DashScopeParams *struct {
+		TopN int `json:"top_n"`
+	} `json:"parameters,omitempty"`
+}
+
+// GetQuery returns the query text, handling both standard and DashScope formats.
+func (r *RerankRequest) GetQuery() string {
+	if r.Query != "" {
+		return r.Query
+	}
+	if r.DashScopeInput != nil {
+		return r.DashScopeInput.Query
+	}
+	return ""
+}
+
+// GetDocuments returns the documents JSON, handling both standard and DashScope formats.
+func (r *RerankRequest) GetDocuments() json.RawMessage {
+	if len(r.Documents) > 0 {
+		return r.Documents
+	}
+	if r.DashScopeInput != nil {
+		return r.DashScopeInput.Documents
+	}
+	return nil
+}
+
+// GetTopN returns the top_n value, handling both standard and DashScope formats.
+func (r *RerankRequest) GetTopN() int {
+	if r.TopN > 0 {
+		return r.TopN
+	}
+	if r.DashScopeParams != nil && r.DashScopeParams.TopN > 0 {
+		return r.DashScopeParams.TopN
+	}
+	return 0
 }
 
 type RerankResponse struct {
@@ -882,6 +923,30 @@ type RerankResponse struct {
 	Usage   RerankUsage     `json:"usage"`
 	Meta    *RerankMeta     `json:"meta,omitempty"`
 	Error   *RerankError    `json:"error,omitempty"`
+	// DashScope nests results under "output" and uses "request_id".
+	DashScopeOutput *struct {
+		Results json.RawMessage `json:"results"`
+	} `json:"output,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
+}
+
+// GetResults returns the results JSON, handling both standard and DashScope formats.
+func (r *RerankResponse) GetResults() json.RawMessage {
+	if len(r.Results) > 0 {
+		return r.Results
+	}
+	if r.DashScopeOutput != nil {
+		return r.DashScopeOutput.Results
+	}
+	return nil
+}
+
+// GetID returns the response ID, handling both standard and DashScope formats.
+func (r *RerankResponse) GetID() string {
+	if r.ID != "" {
+		return r.ID
+	}
+	return r.RequestID
 }
 
 // RerankMeta represents Cohere-style metadata in the rerank response.
@@ -931,6 +996,36 @@ func (r *RerankResponse) GetTotalTokens() int {
 type RerankError struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
+}
+
+// GetInput returns a JSON representation of the rerank input (query + documents).
+func (v *VendorRerank) GetInput() string {
+	query := v.Input.GetQuery()
+	docs := v.Input.GetDocuments()
+	if query == "" && len(docs) == 0 {
+		return ""
+	}
+	obj := struct {
+		Query     string          `json:"query,omitempty"`
+		Documents json.RawMessage `json:"documents,omitempty"`
+	}{
+		Query:     query,
+		Documents: docs,
+	}
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// GetOutput returns a JSON representation of the rerank output (results).
+func (v *VendorRerank) GetOutput() string {
+	results := v.Output.GetResults()
+	if len(results) == 0 {
+		return ""
+	}
+	return string(results)
 }
 
 // Vector retrieval provider types (Pinecone, Qdrant, Milvus, Chroma, Weaviate, etc.)
