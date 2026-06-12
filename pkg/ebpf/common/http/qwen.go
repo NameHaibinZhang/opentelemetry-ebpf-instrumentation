@@ -6,7 +6,6 @@ package ebpfcommon // import "go.opentelemetry.io/obi/pkg/ebpf/common/http"
 import (
 	"bytes"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"strings"
 
@@ -48,18 +47,7 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 		return *baseSpan, false
 	}
 
-	slog.Warn("Qwen",
-		"reqBodyLen", len(reqB),
-		"respBodyLen", len(respB),
-		"request", string(reqB),
-	)
-
 	parsedRequest := parseOpenAIInput(reqB)
-	slog.Warn("Qwen parsed request",
-		"model", parsedRequest.Model,
-		"hasMessages", len(parsedRequest.Messages) > 0,
-		"stream", parsedRequest.Stream,
-	)
 	var parsedResponse request.VendorOpenAI
 	var toolCalls []request.ToolCall
 
@@ -102,21 +90,6 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	if parsedRequest.Model == "" {
 		parsedRequest.Model = parsedResponse.ResponseModel
 	}
-
-	slog.Warn("Qwen parsed response",
-		"id", parsedResponse.ID,
-		"model", parsedResponse.ResponseModel,
-		"promptTokens", parsedResponse.Usage.PromptTokens,
-		"completionTokens", parsedResponse.Usage.CompletionTokens,
-		"inputTokens", parsedResponse.Usage.InputTokens,
-		"outputTokens", parsedResponse.Usage.OutputTokens,
-		"totalTokens", parsedResponse.Usage.TotalTokens,
-		"getInputTokens", parsedResponse.Usage.GetInputTokens(),
-		"getOutputTokens", parsedResponse.Usage.GetOutputTokens(),
-		"hasChoices", len(parsedResponse.Choices) > 0,
-		"hasMessages", len(parsedRequest.Messages) > 0,
-		"respFirstByte", string(respB[:min(1, len(respB))]),
-	)
 
 	parsedResponse.Request = parsedRequest
 	parsedResponse.ToolCalls = toolCalls

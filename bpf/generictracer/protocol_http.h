@@ -135,7 +135,10 @@ static __always_inline void finish_http(http_info_t *info, pid_connection_info_t
             bpf_map_delete_elem(&ongoing_http, pid_conn);
         }
 
-        bpf_map_delete_elem(&active_ssl_connections, pid_conn);
+        // Do NOT delete active_ssl_connections here. The SSL session outlives individual HTTP
+        // transactions (e.g. keep-alive, SSE). Premature deletion causes kprobes to miss the
+        // SSL flag and process TLS ciphertext as plaintext, corrupting large buffers.
+        // Cleanup happens at SSL_shutdown (libssl.c) and tcp_close (terminate_http_request_if_needed).
     }
 }
 

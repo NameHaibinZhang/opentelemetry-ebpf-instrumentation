@@ -108,6 +108,12 @@ int obi_handle_buf_with_args(void *ctx) {
             // Still reading checks if we are processing buffers of a HTTP request
             // that has started, but we haven't seen a response yet.
             if (reading || responding) {
+                // Guard: if data arrived via a non-SSL path but the connection is
+                // known to be SSL, this is TLS ciphertext from a kprobe — skip it.
+                if (!args->ssl && bpf_map_lookup_elem(&active_ssl_connections, &args->pid_conn)) {
+                    bpf_dbg_printk("skipping ciphertext on SSL connection");
+                    return 0;
+                }
                 // Packets are split into chunks if OBI injected the Traceparent
                 // Make sure you look for split packets containing the real Traceparent.
                 // Essentially, when a packet is extended by our sock_msg program and

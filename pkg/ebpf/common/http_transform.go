@@ -283,7 +283,7 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 		if ok {
 			requestBuffer = b
 		} else {
-			slog.Warn("missing large buffer for HTTP request, falling back to inline buf", "traceID", event.Tp.TraceId, "inlineBufLen", len(event.Buf))
+			slog.Debug("missing large buffer for HTTP request, falling back to inline buf", "traceID", event.Tp.TraceId, "inlineBufLen", len(event.Buf))
 			requestBuffer = largebuf.NewLargeBufferFrom(event.Buf[:])
 		}
 
@@ -292,17 +292,8 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 			responseBuffer = b
 			hasResponse = true
 		} else {
-			slog.Warn("missing large buffer for HTTP response", "traceID", event.Tp.TraceId)
+			slog.Debug("missing large buffer for HTTP response", "traceID", event.Tp.TraceId)
 		}
-
-		slog.Warn("HTTPInfoEventToSpan large buffers",
-			"hasLargeBuffers", event.HasLargeBuffers,
-			"isClient", isClient,
-			"reqBufLen", requestBuffer.Len(),
-			"hasResponse", hasResponse,
-			"respBufLen", func() int { if responseBuffer != nil { return responseBuffer.Len() }; return 0 }(),
-			"ssl", event.Ssl,
-		)
 	} else {
 		requestBuffer = largebuf.NewLargeBufferFrom(event.Buf[:])
 	}
@@ -334,15 +325,8 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 	// JSON body and replace req.Body so downstream detectors can parse it.
 	if req.ContentLength > 0 {
 		body, readErr := io.ReadAll(req.Body)
-		slog.Warn("HTTPInfoEventToSpan body probe",
-			"contentLength", req.ContentLength,
-			"bodyLen", len(body),
-			"readErr", readErr,
-			"bufferTotal", requestBuffer.Len(),
-		)
 		if readErr == nil && len(body) == 0 {
 			if recovered := recoverJSONBodyFromBuffer(requestBuffer); len(recovered) > 0 {
-				slog.Warn("recovered request body from raw buffer", "size", len(recovered))
 				body = recovered
 			}
 		}
