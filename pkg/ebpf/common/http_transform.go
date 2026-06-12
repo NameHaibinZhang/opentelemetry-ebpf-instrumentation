@@ -325,9 +325,15 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 	// JSON body and replace req.Body so downstream detectors can parse it.
 	if req.ContentLength > 0 {
 		body, readErr := io.ReadAll(req.Body)
+		slog.Warn("HTTPInfoEventToSpan body probe",
+			"contentLength", req.ContentLength,
+			"bodyLen", len(body),
+			"readErr", readErr,
+			"bufferTotal", requestBuffer.Len(),
+		)
 		if readErr == nil && len(body) == 0 {
 			if recovered := recoverJSONBodyFromBuffer(requestBuffer); len(recovered) > 0 {
-				slog.Debug("recovered request body from raw buffer", "size", len(recovered))
+				slog.Warn("recovered request body from raw buffer", "size", len(recovered))
 				body = recovered
 			}
 		}

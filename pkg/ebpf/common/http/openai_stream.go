@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"strings"
 
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
@@ -89,6 +90,13 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 
 		// Extract usage from the chunk that contains it (typically the last one).
 		if chunk.Usage != nil {
+			slog.Warn("parseOpenAIStream: found usage chunk",
+				"promptTokens", chunk.Usage.PromptTokens,
+				"completionTokens", chunk.Usage.CompletionTokens,
+				"inputTokens", chunk.Usage.InputTokens,
+				"outputTokens", chunk.Usage.OutputTokens,
+				"totalTokens", chunk.Usage.TotalTokens,
+			)
 			response.Usage.PromptTokens = chunk.Usage.PromptTokens
 			response.Usage.CompletionTokens = chunk.Usage.CompletionTokens
 			response.Usage.TotalTokens = chunk.Usage.TotalTokens

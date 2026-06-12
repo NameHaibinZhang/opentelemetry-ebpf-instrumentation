@@ -48,14 +48,14 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 		return *baseSpan, false
 	}
 
-	slog.Debug("Qwen",
+	slog.Warn("Qwen",
 		"reqBodyLen", len(reqB),
 		"respBodyLen", len(respB),
 		"request", string(reqB),
 	)
 
 	parsedRequest := parseOpenAIInput(reqB)
-	slog.Debug("Qwen parsed request",
+	slog.Warn("Qwen parsed request",
 		"model", parsedRequest.Model,
 		"hasMessages", len(parsedRequest.Messages) > 0,
 		"stream", parsedRequest.Stream,
@@ -103,13 +103,19 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 		parsedRequest.Model = parsedResponse.ResponseModel
 	}
 
-	slog.Debug("Qwen parsed response",
+	slog.Warn("Qwen parsed response",
 		"id", parsedResponse.ID,
 		"model", parsedResponse.ResponseModel,
-		"inputTokens", parsedResponse.Usage.GetInputTokens(),
-		"outputTokens", parsedResponse.Usage.GetOutputTokens(),
+		"promptTokens", parsedResponse.Usage.PromptTokens,
+		"completionTokens", parsedResponse.Usage.CompletionTokens,
+		"inputTokens", parsedResponse.Usage.InputTokens,
+		"outputTokens", parsedResponse.Usage.OutputTokens,
+		"totalTokens", parsedResponse.Usage.TotalTokens,
+		"getInputTokens", parsedResponse.Usage.GetInputTokens(),
+		"getOutputTokens", parsedResponse.Usage.GetOutputTokens(),
 		"hasChoices", len(parsedResponse.Choices) > 0,
 		"hasMessages", len(parsedRequest.Messages) > 0,
+		"respFirstByte", string(respB[:min(1, len(respB))]),
 	)
 
 	parsedResponse.Request = parsedRequest
