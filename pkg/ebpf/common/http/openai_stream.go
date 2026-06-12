@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"strings"
 
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
@@ -46,7 +47,7 @@ type openAIStreamToolCall struct {
 
 // parseOpenAIStream parses the SSE stream from OpenAI-compatible APIs (including Qwen/DashScope)
 // and returns the aggregated response with usage statistics and tool calls.
-func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolCall, error) {
+func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolCall) {
 	scanner := bufio.NewScanner(reader)
 	response := &request.VendorOpenAI{}
 
@@ -174,5 +175,10 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 		})
 	}
 
-	return response, toolCalls, nil
+	if response.Usage.GetInputTokens() == 0 && response.Usage.GetOutputTokens() == 0 && response.ID != "" {
+		slog.Debug("parseOpenAIStream: no usage data found in SSE stream, token counts will be 0",
+			"id", response.ID, "model", response.ResponseModel, "finishReason", finishReason)
+	}
+
+	return response, toolCalls
 }

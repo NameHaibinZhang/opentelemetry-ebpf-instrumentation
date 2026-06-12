@@ -67,10 +67,9 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	} else {
 		// SSE stream response (Qwen uses OpenAI-compatible SSE format)
 		reader := bytes.NewReader(respB)
-		if streamResponse, tc, err := parseOpenAIStream(reader); err == nil {
-			parsedResponse = *streamResponse
-			toolCalls = tc
-		}
+		streamResponse, tc := parseOpenAIStream(reader)
+		parsedResponse = *streamResponse
+		toolCalls = tc
 	}
 
 	// Fallback: try to get request ID from response headers

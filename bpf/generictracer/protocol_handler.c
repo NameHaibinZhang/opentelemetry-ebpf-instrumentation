@@ -156,7 +156,10 @@ int obi_handle_buf_with_args(void *ctx) {
                 }
 
                 bpf_dbg_printk("large_buf append: ssl=%d responding=%d len=%d resp_len=%d",
-                               args->ssl, responding, args->bytes_len, info->resp_len);
+                               args->ssl,
+                               responding,
+                               args->bytes_len,
+                               info->resp_len);
                 http_send_large_buffer(info,
                                        (void *)args->u_buf,
                                        args->bytes_len,

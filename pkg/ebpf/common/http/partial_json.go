@@ -246,12 +246,12 @@ func extractJSONRawField(body []byte, field string) json.RawMessage {
 	}
 
 	open := rest[i]
-	var close byte
+	var closeBracket byte
 	switch open {
 	case '[':
-		close = ']'
+		closeBracket = ']'
 	case '{':
-		close = '}'
+		closeBracket = '}'
 	default:
 		return nil
 	}
@@ -276,9 +276,10 @@ func extractJSONRawField(body []byte, field string) json.RawMessage {
 		if inString {
 			continue
 		}
-		if ch == open {
+		switch ch {
+		case open:
 			depth++
-		} else if ch == close {
+		case closeBracket:
 			depth--
 			if depth == 0 {
 				return json.RawMessage(rest[i : j+1])

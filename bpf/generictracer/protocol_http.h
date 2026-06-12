@@ -359,10 +359,10 @@ static __always_inline void handle_http_response(unsigned char *small_buf,
                                                  u64 u_buf,
                                                  lw_thread_t lw_thread) {
     process_http_response(info, small_buf);
-    cleanup_http_request_data(pid_conn, info);
 
     // Generic Go events cannot be delayed for now since we don't probe on net_close
     if (high_request_volume || (lw_thread != k_lw_thread_none)) {
+        cleanup_http_request_data(pid_conn, info);
         finish_http(info, pid_conn);
         // If we are terminating because of a light weight thread, e.g. Go we must clean
         // the server information we have encoded in the Go structs.
@@ -375,6 +375,15 @@ static __always_inline void handle_http_response(unsigned char *small_buf,
         if (detect_sse_response(u_buf, orig_len)) {
             bpf_dbg_printk("SSE response detected, marking is_sse");
             info->is_sse = 1;
+        }
+        // Defer server trace cleanup for delayed/SSE responses so that
+        // outgoing client requests on the same thread can still find the
+        // parent server trace context (server_traces + obi_ctx).
+        // cleanup_http_request_data will run later when the connection
+        // finishes (finish_possible_delayed_http_request or
+        // terminate_http_request_if_needed).
+        if (!info->is_sse) {
+            cleanup_http_request_data(pid_conn, info);
         }
     }
 }
