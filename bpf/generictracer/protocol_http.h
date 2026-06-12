@@ -340,7 +340,7 @@ static __always_inline bool detect_sse_response(u64 u_buf, int bytes_len) {
         return false;
     }
 
-    for (int i = 0; i < 244 && i <= limit; i++) {
+    for (int i = 0; i < 128 && i <= limit; i++) {
         if (hdr_buf[i] == 'e' && hdr_buf[i + 1] == 'v' && hdr_buf[i + 2] == 'e' &&
             hdr_buf[i + 3] == 'n' && hdr_buf[i + 4] == 't' && hdr_buf[i + 5] == '-' &&
             hdr_buf[i + 6] == 's' && hdr_buf[i + 7] == 't' && hdr_buf[i + 8] == 'r' &&
@@ -373,7 +373,6 @@ static __always_inline void handle_http_response(unsigned char *small_buf,
         bpf_dbg_printk("Delaying finish http for large request, orig_len=%d", orig_len);
         info->delayed = 1;
         if (detect_sse_response(u_buf, orig_len)) {
-            bpf_dbg_printk("SSE response detected, marking is_sse");
             info->is_sse = 1;
         }
         // Defer server trace cleanup for delayed/SSE responses so that
