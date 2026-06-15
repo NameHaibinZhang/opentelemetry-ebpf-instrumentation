@@ -117,8 +117,8 @@ static __always_inline void server_or_client_trace(const u8 type,
         trace_key_t t_key = {0};
         task_tid(&t_key.p_key);
         // Key the server trace by the mounted virtual thread's logical id,
-        // if any: concurrent requests whose VTs read on the same carrier tid
-        // would otherwise collide in the conflict branch below.
+        // if any: concurrent requests whose VTs share the same carrier tid
+        // would otherwise overwrite each other.
         const u8 vt_keyed = java_vt_translate_tid(&t_key.p_key);
         t_key.extra_id = extra_runtime_id();
 
@@ -131,14 +131,6 @@ static __always_inline void server_or_client_trace(const u8 type,
                        conn_part.port);
 
         bpf_map_update_elem(&server_traces_aux, &conn_part, tp_p, BPF_ANY);
-
-        tp_info_pid_t *existing = bpf_map_lookup_elem(&server_traces, &t_key);
-        if (existing && (existing->req_type == tp_p->req_type) &&
-            (tp_p->req_type == EVENT_HTTP_REQUEST)) {
-            existing->valid = 0;
-            bpf_dbg_printk("Found conflicting thread server span, marking it invalid.");
-            return;
-        }
 
         bpf_dbg_printk(
             "Saving thread server span for ns=%x, extra_id=%llx", t_key.p_key.ns, t_key.extra_id);
