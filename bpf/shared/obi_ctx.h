@@ -12,7 +12,6 @@
 typedef struct obi_ctx_info {
     unsigned char trace_id[TRACE_ID_SIZE_BYTES];
     unsigned char span_id[SPAN_ID_SIZE_BYTES];
-    u64 ts;
 } obi_ctx_info_t;
 
 // NOTE: this map spec is part of an OTEP (https://github.com/open-telemetry/opentelemetry-specification/pull/4855).
@@ -33,7 +32,6 @@ static __always_inline long obi_ctx__set(const u64 pid_tgid, const tp_info_t *in
     obi_ctx_info_t obi_info = {};
     bpf_memcpy(obi_info.trace_id, info->trace_id, TRACE_ID_SIZE_BYTES);
     bpf_memcpy(obi_info.span_id, info->span_id, SPAN_ID_SIZE_BYTES);
-    obi_info.ts = info->ts;
     return bpf_map_update_elem(&traces_ctx_v1, &pid_tgid, &obi_info, BPF_ANY);
 }
 
@@ -41,7 +39,6 @@ static __always_inline long
 obi_ctx__set_(const u64 pid_tgid, const tp_info_t *info, obi_ctx_info_t *obi_info) {
     bpf_memcpy(obi_info->trace_id, info->trace_id, TRACE_ID_SIZE_BYTES);
     bpf_memcpy(obi_info->span_id, info->span_id, SPAN_ID_SIZE_BYTES);
-    obi_info->ts = info->ts;
     return bpf_map_update_elem(&traces_ctx_v1, &pid_tgid, obi_info, BPF_ANY);
 }
 
