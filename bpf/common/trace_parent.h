@@ -346,7 +346,10 @@ static __always_inline tp_info_pid_t *find_parent_trace(const pid_connection_inf
             __builtin_memcpy(tp_p->tp.trace_id, obi->trace_id, TRACE_ID_SIZE_BYTES);
             __builtin_memcpy(tp_p->tp.span_id, obi->span_id, SPAN_ID_SIZE_BYTES);
             __builtin_memset(tp_p->tp.parent_id, 0, sizeof(tp_p->tp.parent_id));
-            tp_p->tp.ts = bpf_ktime_get_ns();
+            // obi_ctx only stores trace_id + span_id, not the original
+            // server span timestamp.  Set ts = 0 so that
+            // should_be_in_same_transaction skips the staleness check.
+            tp_p->tp.ts = 0;
             tp_p->tp.flags = 1;
             tp_p->valid = 1;
             tp_p->written = 0;

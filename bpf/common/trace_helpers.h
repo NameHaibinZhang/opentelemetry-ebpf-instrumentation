@@ -39,6 +39,13 @@ static __always_inline u8 valid_trace(const unsigned char *trace_id) {
 
 static __always_inline u8 should_be_in_same_transaction(const tp_info_t *parent_tp,
                                                         const tp_info_t *child_tp) {
+    // ts == 0 means the parent timestamp is unknown (e.g. recovered from
+    // obi_ctx which only stores trace_id + span_id).  Skip the staleness
+    // check — the trace_id validity was already verified by the caller.
+    if (parent_tp->ts == 0) {
+        return 1;
+    }
+
     if (child_tp->ts < parent_tp->ts) {
         return 0;
     }
