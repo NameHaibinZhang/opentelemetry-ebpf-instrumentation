@@ -18,6 +18,23 @@ import (
 
 var jsonBestEffort = jsoniter.ConfigCompatibleWithStandardLibrary
 
+// looksLikeJSON returns true if the data starts with '{' or '[' after
+// stripping leading ASCII whitespace. This avoids misclassifying plain
+// JSON responses (which may have leading newlines/spaces) as SSE streams.
+func looksLikeJSON(data []byte) bool {
+	for _, b := range data {
+		switch b {
+		case ' ', '\t', '\n', '\r':
+			continue
+		case '{', '[':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 const (
 	// modelSearchWindow limits extraction for top-level request model
 	// fields to the start of the request payload.

@@ -81,7 +81,7 @@ func OpenAISpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 	var parsedResponse request.VendorOpenAI
 	var toolCalls []request.ToolCall
 
-	if len(respB) > 0 && respB[0] == '{' {
+	if looksLikeJSON(respB) {
 		parsedResponse = parseVendorOpenAI(respB)
 		toolCalls = extractToolCalls(parsedResponse.Choices)
 	} else {
