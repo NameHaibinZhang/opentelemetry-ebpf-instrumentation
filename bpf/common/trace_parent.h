@@ -316,6 +316,11 @@ static __always_inline tp_info_pid_t *find_parent_trace(const pid_connection_inf
         return puma_parent;
     }
 
+    // Save original key before Java/Process lookups (they may modify t_key
+    // via parent-chain walking through java_tasks / clone_map).
+    const pid_key_t orig_p_key = t_key->p_key;
+    const u64 orig_extra_id = t_key->extra_id;
+
     tp_info_pid_t *java_parent = find_parent_java_trace(t_key);
     if (java_parent) {
         return java_parent;
@@ -325,6 +330,24 @@ static __always_inline tp_info_pid_t *find_parent_trace(const pid_connection_inf
 
     if (proc_parent) {
         return proc_parent;
+    }
+
+    // Thread-pool fallback: when a worker thread (tid != pid) makes an
+    // outgoing call, the server trace lives under the main thread's key
+    // (tid == pid). This covers Python asyncio + httpx and similar
+    // frameworks that delegate HTTP I/O to a thread pool.
+    if (orig_p_key.tid != orig_p_key.pid) {
+        trace_key_t main_key = {
+            .p_key = {.ns = orig_p_key.ns, .pid = orig_p_key.pid, .tid = orig_p_key.pid},
+            .extra_id = orig_extra_id,
+        };
+        tp_info_pid_t *main_tp = bpf_map_lookup_elem(&server_traces, &main_key);
+        if (main_tp) {
+            bpf_dbg_printk("Found parent trace via main thread fallback tid=%d->%d",
+                           orig_p_key.tid,
+                           orig_p_key.pid);
+            return main_tp;
+        }
     }
 
     const cp_support_data_t *conn_t_key = bpf_map_lookup_elem(&cp_support_connect_info, p_conn);
@@ -346,7 +369,7 @@ static __always_inline tp_info_pid_t *find_parent_trace(const pid_connection_inf
             __builtin_memcpy(tp_p->tp.trace_id, obi->trace_id, TRACE_ID_SIZE_BYTES);
             __builtin_memcpy(tp_p->tp.span_id, obi->span_id, SPAN_ID_SIZE_BYTES);
             __builtin_memset(tp_p->tp.parent_id, 0, sizeof(tp_p->tp.parent_id));
-            tp_p->tp.ts = bpf_ktime_get_ns();
+            tp_p->tp.ts = obi->ts ? obi->ts : bpf_ktime_get_ns();
             tp_p->tp.flags = 1;
             tp_p->valid = 1;
             tp_p->written = 0;
