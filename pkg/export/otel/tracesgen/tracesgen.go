@@ -708,8 +708,8 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Error.Type))
 			}
 			if ai.OperationName == request.EmbeddingOperationName {
-				if ai.Request.Dimensions > 0 {
-					attrs = append(attrs, semconv.GenAIEmbeddingsDimensionCount(ai.Request.Dimensions))
+				if dims := ai.GetEmbeddingDimensions(); dims > 0 {
+					attrs = append(attrs, semconv.GenAIEmbeddingsDimensionCount(dims))
 				}
 				if ai.Request.EncodingFormat != "" {
 					attrs = append(attrs, semconv.GenAIRequestEncodingFormats(ai.Request.EncodingFormat))
@@ -942,8 +942,8 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 				}
 			}
 			if ai.OperationName == request.EmbeddingOperationName {
-				if ai.Request.Dimensions > 0 {
-					attrs = append(attrs, semconv.GenAIEmbeddingsDimensionCount(ai.Request.Dimensions))
+				if dims := ai.GetEmbeddingDimensions(); dims > 0 {
+					attrs = append(attrs, semconv.GenAIEmbeddingsDimensionCount(dims))
 				}
 				if ai.Request.EncodingFormat != "" {
 					attrs = append(attrs, semconv.GenAIRequestEncodingFormats(ai.Request.EncodingFormat))
