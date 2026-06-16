@@ -401,6 +401,15 @@ func mcpAttributes(span *request.Span) []attribute.KeyValue {
 	if mcp.ToolName != "" {
 		attrs = append(attrs, attribute.String(string(attr.GenAIToolName), mcp.ToolName))
 	}
+	if mcp.ToolType != "" {
+		attrs = append(attrs, attribute.String(string(attr.GenAIToolType), mcp.ToolType))
+	}
+	if mcp.ToolCallArguments != "" {
+		attrs = append(attrs, attribute.String(string(attr.GenAIToolCallArguments), mcp.ToolCallArguments))
+	}
+	if mcp.ToolCallResult != "" {
+		attrs = append(attrs, attribute.String(string(attr.GenAIToolCallResult), mcp.ToolCallResult))
+	}
 	if mcp.ResourceURI != "" {
 		attrs = append(attrs, attribute.String(string(attr.MCPResourceURI), mcp.ResourceURI))
 	}

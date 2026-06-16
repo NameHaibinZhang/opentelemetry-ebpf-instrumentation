@@ -2068,11 +2068,14 @@ func TestGenerateTracesAttributes(t *testing.T) {
 			SubType: request.HTTPSubtypeMCP,
 			GenAI: &request.GenAI{
 				MCP: &request.MCPCall{
-					Method:      "tools/call",
-					ToolName:    "get-weather",
-					SessionID:   "sess-abc",
-					ProtocolVer: "2025-03-26",
-					RequestID:   "1",
+					Method:            "tools/call",
+					ToolName:          "get-weather",
+					ToolType:          "function",
+					ToolCallArguments: `{"location":"San Francisco"}`,
+					ToolCallResult:    `[{"type":"text","text":"Sunny, 72°F"}]`,
+					SessionID:         "sess-abc",
+					ProtocolVer:       "2025-03-26",
+					RequestID:         "1",
 				},
 			},
 		}
@@ -2091,6 +2094,9 @@ func TestGenerateTracesAttributes(t *testing.T) {
 		ensureTraceStrAttr(t, attrs, "mcp.method.name", "tools/call")
 		ensureTraceStrAttr(t, attrs, "gen_ai.operation.name", "execute_tool")
 		ensureTraceStrAttr(t, attrs, "gen_ai.tool.name", "get-weather")
+		ensureTraceStrAttr(t, attrs, "gen_ai.tool.type", "function")
+		ensureTraceStrAttr(t, attrs, "gen_ai.tool.call.arguments", `{"location":"San Francisco"}`)
+		ensureTraceStrAttr(t, attrs, "gen_ai.tool.call.result", `[{"type":"text","text":"Sunny, 72°F"}]`)
 		ensureTraceStrAttr(t, attrs, "mcp.session.id", "sess-abc")
 		ensureTraceStrAttr(t, attrs, "mcp.protocol.version", "2025-03-26")
 		ensureTraceStrAttr(t, attrs, "jsonrpc.request.id", "1")
