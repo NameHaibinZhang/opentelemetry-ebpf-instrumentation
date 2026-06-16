@@ -388,7 +388,9 @@ func genAIToolCallAttributes(toolCalls []request.ToolCall) []attribute.KeyValue 
 }
 
 // mcpAttributes returns MCP span attributes following the OTEL MCP semantic conventions.
-func mcpAttributes(span *request.Span) []attribute.KeyValue {
+// Tool call arguments and results are gated behind optionalAttrs (GenAIInput/GenAIOutput)
+// because they may be large or contain sensitive data.
+func mcpAttributes(span *request.Span, optionalAttrs map[attr.Name]struct{}) []attribute.KeyValue {
 	if span.SubType != request.HTTPSubtypeMCP || span.GenAI == nil || span.GenAI.MCP == nil {
 		return nil
 	}
@@ -404,10 +406,11 @@ func mcpAttributes(span *request.Span) []attribute.KeyValue {
 	if mcp.ToolType != "" {
 		attrs = append(attrs, attribute.String(string(attr.GenAIToolType), mcp.ToolType))
 	}
-	if mcp.ToolCallArguments != "" {
+	// Gate potentially large/sensitive tool call data behind optionalAttrs
+	if _, ok := optionalAttrs[attr.GenAIInput]; ok && mcp.ToolCallArguments != "" {
 		attrs = append(attrs, attribute.String(string(attr.GenAIToolCallArguments), mcp.ToolCallArguments))
 	}
-	if mcp.ToolCallResult != "" {
+	if _, ok := optionalAttrs[attr.GenAIOutput]; ok && mcp.ToolCallResult != "" {
 		attrs = append(attrs, attribute.String(string(attr.GenAIToolCallResult), mcp.ToolCallResult))
 	}
 	if mcp.ResourceURI != "" {
@@ -499,7 +502,7 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 			attrs = append(attrs, semconv.GraphQLOperationName(span.GraphQL.OperationName))
 			attrs = append(attrs, request.GraphqlOperationType(span.GraphQL.OperationType))
 		}
-		attrs = append(attrs, mcpAttributes(span)...)
+		attrs = append(attrs, mcpAttributes(span, optionalAttrs)...)
 		attrs = append(attrs, jsonRPCAttributes(span)...)
 		attrs = append(attrs, httpEnrichmentAttributes(span)...)
 	case request.EventTypeGRPC:
@@ -1044,7 +1047,7 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 			}
 		}
 
-		attrs = append(attrs, mcpAttributes(span)...)
+		attrs = append(attrs, mcpAttributes(span, optionalAttrs)...)
 
 		if span.SubType == request.HTTPSubtypeEmbedding && span.GenAI != nil && span.GenAI.Embedding != nil {
 			ai := span.GenAI.Embedding

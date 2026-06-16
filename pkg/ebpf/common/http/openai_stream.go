@@ -13,6 +13,10 @@ import (
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
 )
 
+// maxStreamToolCalls caps the tool-call accumulator to prevent unbounded
+// growth from untrusted tool_calls[].index values.
+const maxStreamToolCalls = 256
+
 type openAIStreamChunk struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
@@ -119,6 +123,9 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 			for j := range choice.Delta.ToolCalls {
 				tc := &choice.Delta.ToolCalls[j]
 				idx := tc.Index
+				if idx < 0 || idx >= maxStreamToolCalls {
+					continue
+				}
 
 				// Grow the accumulator slice as needed.
 				for len(accumulators) <= idx {
