@@ -4,8 +4,8 @@
 package ebpfcommon // import "go.opentelemetry.io/obi/pkg/ebpf/common/http"
 
 import (
+	"bytes"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"strings"
 
@@ -22,7 +22,10 @@ func isQwen(respHeader http.Header) bool {
 }
 
 func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (request.Span, bool) {
-	if !isQwen(resp.Header) {
+	headerDetected := isQwen(resp.Header)
+
+	// Fast exit: not detected by headers and URL doesn't match
+	if !headerDetected && !isQwenCompatibleURL(req) {
 		return *baseSpan, false
 	}
 
@@ -31,27 +34,46 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 		return *baseSpan, false
 	}
 
+	// If not detected by headers, verify model name starts with "qwen"
+	if !headerDetected {
+		model := extractModelField(reqB)
+		if !strings.HasPrefix(strings.ToLower(model), "qwen") {
+			return *baseSpan, false
+		}
+	}
+
 	respB, ok := readHTTPResponseBody("QwenSpan", resp, baseSpan)
 	if !ok {
 		return *baseSpan, false
 	}
 
-	slog.Debug("Qwen", "request", string(reqB), "response", string(respB))
-
 	parsedRequest := parseOpenAIInput(reqB)
-	parsedResponse := parseVendorOpenAI(respB)
+	var parsedResponse request.VendorOpenAI
+	var toolCalls []request.ToolCall
 
-	if parsedResponse.ID == "" {
-		var responseID struct {
-			RequestID string `json:"request_id"`
+	if looksLikeJSON(respB) {
+		parsedResponse = parseVendorOpenAI(respB)
+		toolCalls = extractToolCalls(parsedResponse.Choices)
+
+		// Qwen-specific: try to extract request_id from response body
+		if parsedResponse.ID == "" {
+			var responseID struct {
+				RequestID string `json:"request_id"`
+			}
+			if err := json.Unmarshal(respB, &responseID); err == nil {
+				parsedResponse.ID = responseID.RequestID
+			}
 		}
-		if err := json.Unmarshal(respB, &responseID); err == nil {
-			parsedResponse.ID = responseID.RequestID
-		}
+	} else {
+		// SSE stream response (Qwen uses OpenAI-compatible SSE format)
+		reader := bytes.NewReader(respB)
+		streamResponse, tc := parseOpenAIStream(reader)
+		parsedResponse = *streamResponse
+		toolCalls = tc
 	}
 
+	// Fallback: try to get request ID from response headers
 	if parsedResponse.ID == "" {
-		// Fall back to response headers when body capture is partial/truncated.
 		for _, headerName := range []string{"X-DashScope-Request-Id", "X-Request-Id"} {
 			if headerValue := strings.TrimSpace(resp.Header.Get(headerName)); headerValue != "" {
 				parsedResponse.ID = headerValue
@@ -69,7 +91,7 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	}
 
 	parsedResponse.Request = parsedRequest
-	parsedResponse.ToolCalls = extractToolCalls(parsedResponse.Choices)
+	parsedResponse.ToolCalls = toolCalls
 
 	baseSpan.SubType = request.HTTPSubtypeQwen
 	baseSpan.GenAI = &request.GenAI{
@@ -77,6 +99,18 @@ func QwenSpan(baseSpan *request.Span, req *http.Request, resp *http.Response) (r
 	}
 
 	return *baseSpan, true
+}
+
+// isQwenCompatibleURL checks if the request targets a standard
+// OpenAI-compatible endpoint that might serve Qwen models.
+func isQwenCompatibleURL(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	path := requestPath(req)
+	return strings.Contains(path, "/chat/completions") ||
+		strings.Contains(path, "/completions") ||
+		strings.Contains(path, "/generation")
 }
 
 func extractQwenOperation(req *http.Request) string {
