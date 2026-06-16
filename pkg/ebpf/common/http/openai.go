@@ -4,6 +4,7 @@
 package ebpfcommon // import "go.opentelemetry.io/obi/pkg/ebpf/common/http"
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -77,7 +78,18 @@ func OpenAISpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 	slog.Debug("OpenAI", "request", string(reqB), "response", string(respB))
 
 	parsedRequest := parseOpenAIInput(reqB)
-	parsedResponse := parseVendorOpenAI(respB)
+	var parsedResponse request.VendorOpenAI
+	var toolCalls []request.ToolCall
+
+	if looksLikeJSON(respB) {
+		parsedResponse = parseVendorOpenAI(respB)
+		toolCalls = extractToolCalls(parsedResponse.Choices)
+	} else {
+		reader := bytes.NewReader(respB)
+		streamResponse, tc := parseOpenAIStream(reader)
+		parsedResponse = *streamResponse
+		toolCalls = tc
+	}
 
 	if parsedResponse.ResponseModel == "" {
 		parsedResponse.ResponseModel = parsedRequest.Model
@@ -87,7 +99,7 @@ func OpenAISpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 	}
 
 	parsedResponse.Request = parsedRequest
-	parsedResponse.ToolCalls = extractToolCalls(parsedResponse.Choices)
+	parsedResponse.ToolCalls = toolCalls
 
 	// Override operation name and derive API type from URL path.
 	if req.URL != nil {
