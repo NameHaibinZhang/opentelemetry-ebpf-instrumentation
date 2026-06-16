@@ -24,6 +24,11 @@ enum {
     // Maximum valid value for each protocol's *_max_captured_bytes volatile variable.
     // These must equal the lte= validation values in EBPFBufferSizes (pkg/config/ebpf_tracer.go),
     // which enforces the same ceiling at configuration time.
+    // Per-syscall emit cap for HTTP. Keeps the large_buf_emit_chunks() loop bounded
+    // (64KB / 16KB = 4 iterations) so the verifier stays within the 1M insn budget.
+    // The connection-level total is controlled by the volatile const http_max_captured_bytes,
+    // which may be larger (up to the lte= ceiling in EBPFBufferSizes) and is accumulated
+    // across multiple tcp_recvmsg invocations via bytes_sent.
     k_large_buf_max_http_captured_bytes = 1 << 16,
     k_large_buf_max_mysql_captured_bytes = 1 << 16,
     k_large_buf_max_postgres_captured_bytes = 1 << 16,

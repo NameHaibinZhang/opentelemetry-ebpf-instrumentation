@@ -110,6 +110,7 @@ func isQwenCompatibleURL(req *http.Request) bool {
 	path := requestPath(req)
 	return strings.Contains(path, "/chat/completions") ||
 		strings.Contains(path, "/completions") ||
+		strings.Contains(path, "/embeddings") ||
 		strings.Contains(path, "/generation")
 }
 
