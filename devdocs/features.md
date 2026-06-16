@@ -66,13 +66,15 @@ Large payloads are streamed to userspace across multiple ring-buffer events and 
 
 | Environment variable               | Protocol   | Maximum | Default      |
 |:-----------------------------------|:----------:|--------:|:------------:|
-| `OTEL_EBPF_BPF_BUFFER_SIZE_HTTP`   | HTTP       | 65535   | 0 (disabled) |
+| `OTEL_EBPF_BPF_BUFFER_SIZE_HTTP`   | HTTP       | 262144[^1] | 0 (disabled) |
 | `OTEL_EBPF_BPF_BUFFER_SIZE_MYSQL`  | MySQL      | 65535   | 0 (disabled) |
 | `OTEL_EBPF_BPF_BUFFER_SIZE_KAFKA`  | Kafka      | 65535   | 0 (disabled) |
 | `OTEL_EBPF_BPF_BUFFER_SIZE_POSTGRES` | PostgreSQL | 65535 | 0 (disabled) |
 | `OTEL_EBPF_BPF_BUFFER_SIZE_MSSQL`  | MSSQL      | 65535   | 0 (disabled) |
 
 Equivalent YAML keys live under `ebpf.buffer_sizes.{http,mysql,kafka,postgres,mssql}`.
+
+[^1]: HTTP payload may be accumulated across multiple `recv` calls (up to 4 × 64KB) before being forwarded to userspace.
 
 ## GPU Instrumentation
 
