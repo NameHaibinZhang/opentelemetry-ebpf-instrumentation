@@ -876,45 +876,42 @@ type RerankRequest struct {
 	Query     string          `json:"query"`
 	TopN      int             `json:"top_n"`
 	Documents json.RawMessage `json:"documents"`
-	// DashScope nests query/documents under "input" and top_n under "parameters".
-	DashScopeInput *struct {
+	// Some providers nest query/documents under "input" and top_n under "parameters".
+	NestedInput *struct {
 		Query     string          `json:"query"`
 		Documents json.RawMessage `json:"documents"`
 	} `json:"input,omitempty"`
-	DashScopeParams *struct {
+	NestedParams *struct {
 		TopN int `json:"top_n"`
 	} `json:"parameters,omitempty"`
 }
 
-// GetQuery returns the query text, handling both standard and DashScope formats.
 func (r *RerankRequest) GetQuery() string {
 	if r.Query != "" {
 		return r.Query
 	}
-	if r.DashScopeInput != nil {
-		return r.DashScopeInput.Query
+	if r.NestedInput != nil {
+		return r.NestedInput.Query
 	}
 	return ""
 }
 
-// GetDocuments returns the documents JSON, handling both standard and DashScope formats.
 func (r *RerankRequest) GetDocuments() json.RawMessage {
 	if len(r.Documents) > 0 {
 		return r.Documents
 	}
-	if r.DashScopeInput != nil {
-		return r.DashScopeInput.Documents
+	if r.NestedInput != nil {
+		return r.NestedInput.Documents
 	}
 	return nil
 }
 
-// GetTopN returns the top_n value, handling both standard and DashScope formats.
 func (r *RerankRequest) GetTopN() int {
 	if r.TopN > 0 {
 		return r.TopN
 	}
-	if r.DashScopeParams != nil && r.DashScopeParams.TopN > 0 {
-		return r.DashScopeParams.TopN
+	if r.NestedParams != nil && r.NestedParams.TopN > 0 {
+		return r.NestedParams.TopN
 	}
 	return 0
 }
@@ -926,25 +923,23 @@ type RerankResponse struct {
 	Usage   RerankUsage     `json:"usage"`
 	Meta    *RerankMeta     `json:"meta,omitempty"`
 	Error   *RerankError    `json:"error,omitempty"`
-	// DashScope nests results under "output" and uses "request_id".
-	DashScopeOutput *struct {
+	// Some providers nest results under "output".
+	NestedOutput *struct {
 		Results json.RawMessage `json:"results"`
 	} `json:"output,omitempty"`
 	RequestID string `json:"request_id,omitempty"`
 }
 
-// GetResults returns the results JSON, handling both standard and DashScope formats.
 func (r *RerankResponse) GetResults() json.RawMessage {
 	if len(r.Results) > 0 {
 		return r.Results
 	}
-	if r.DashScopeOutput != nil {
-		return r.DashScopeOutput.Results
+	if r.NestedOutput != nil {
+		return r.NestedOutput.Results
 	}
 	return nil
 }
 
-// GetID returns the response ID, handling both standard and DashScope formats.
 func (r *RerankResponse) GetID() string {
 	if r.ID != "" {
 		return r.ID
@@ -1081,6 +1076,22 @@ type RetrievalRequest struct {
 	CollectionName  string `json:"collectionName,omitempty"`
 	CollectionSnake string `json:"collection_name,omitempty"`
 	Namespace       string `json:"namespace,omitempty"`
+	// TopK / limit for similarity search results.
+	// Pinecone/Qdrant use "topK"/"top_k", Milvus/Chroma use "limit".
+	TopK      int `json:"topK,omitempty"`
+	TopKSnake int `json:"top_k,omitempty"`
+	Limit     int `json:"limit,omitempty"`
+}
+
+// GetTopK returns the top-k value from whichever field was populated.
+func (r *RetrievalRequest) GetTopK() int {
+	if r.TopK > 0 {
+		return r.TopK
+	}
+	if r.TopKSnake > 0 {
+		return r.TopKSnake
+	}
+	return r.Limit
 }
 
 // RetrievalResponse captures the common fields from vector search response

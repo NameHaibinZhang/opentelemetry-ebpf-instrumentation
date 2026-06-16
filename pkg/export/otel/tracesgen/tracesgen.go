@@ -941,6 +941,14 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 					attrs = append(attrs, request.Metadata(string(ai.Metadata)))
 				}
 			}
+			if ai.OperationName == request.EmbeddingOperationName {
+				if ai.Request.Dimensions > 0 {
+					attrs = append(attrs, semconv.GenAIEmbeddingsDimensionCount(ai.Request.Dimensions))
+				}
+				if ai.Request.EncodingFormat != "" {
+					attrs = append(attrs, semconv.GenAIRequestEncodingFormats(ai.Request.EncodingFormat))
+				}
+			}
 			if ai.Error.Type != "" {
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Error.Type))
 			}
@@ -1084,6 +1092,9 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 			}
 			if collection := ai.GetCollection(); collection != "" {
 				attrs = append(attrs, semconv.GenAIDataSourceID(collection))
+			}
+			if topK := ai.Input.GetTopK(); topK > 0 {
+				attrs = append(attrs, attribute.Int("gen_ai.retrieval.top_k", topK))
 			}
 		}
 
