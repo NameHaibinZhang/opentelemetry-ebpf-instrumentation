@@ -56,6 +56,12 @@ func appendTCPLargeBuffer(parseCtx *EBPFParseContext, record *ringbuf.Record) (r
 
 	chunk := record.RawSample[hdrSize : hdrSize+event.Len]
 
+	// Drop TLS ciphertext that leaked from kprobes into HTTP large buffers.
+	// TLS application data records start with 0x17 0x03 {0x00-0x03}.
+	if event.Kind == uint8(KindLayerApp) && event.Action == largeBufferActionAppend && isTLSRecord(chunk) {
+		return request.Span{}, true, nil
+	}
+
 	initFunc := func(b []byte) {
 		lb := largebuf.NewLargeBuffer()
 		lb.AppendChunk(b)
@@ -125,6 +131,18 @@ func protocolToLargeBufferKind(protocolType uint8) largeBufferKind {
 	}
 	// No large buffers for MQTT the rest are generic TCP buffers
 	return KindLayerWire
+}
+
+func isTLSRecord(b []byte) bool {
+	if len(b) < 5 {
+		return false
+	}
+	// Content type: 0x14 (ChangeCipherSpec), 0x15 (Alert), 0x16 (Handshake), 0x17 (ApplicationData)
+	if b[0] < 0x14 || b[0] > 0x17 {
+		return false
+	}
+	// TLS version: major=3, minor=0-4 (SSLv3 through TLS 1.3)
+	return b[1] == 0x03 && b[2] <= 0x04
 }
 
 func extractTCPLargeBuffer(
