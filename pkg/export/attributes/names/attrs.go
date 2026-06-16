@@ -238,11 +238,11 @@ const (
 	CloudRegion = Name(semconv.CloudRegionKey)
 
 	// GenAI
-	GenAIInput        = Name(semconv.GenAIInputMessagesKey)
-	GenAIInstructions = Name(semconv.GenAISystemInstructionsKey)
-	GenAIOutput       = Name(semconv.GenAIOutputMessagesKey)
-	GenAIMetadata     = Name("gen_ai.metadata")
-	GenAITools        = Name(semconv.GenAIToolDefinitionsKey)
+	GenAIInput             = Name(semconv.GenAIInputMessagesKey)
+	GenAIInstructions      = Name(semconv.GenAISystemInstructionsKey)
+	GenAIOutput            = Name(semconv.GenAIOutputMessagesKey)
+	GenAIMetadata          = Name("gen_ai.metadata")
+	GenAITools             = Name(semconv.GenAIToolDefinitionsKey)
 	GenAIToolName          = Name("gen_ai.tool.name")
 	GenAIToolType          = Name("gen_ai.tool.type")
 	GenAIToolCallID        = Name("gen_ai.tool.call.id")
