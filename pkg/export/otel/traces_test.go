@@ -2079,7 +2079,10 @@ func TestGenerateTracesAttributes(t *testing.T) {
 				},
 			},
 		}
-		tAttrs := tracesgen.TraceAttributesSelector(&span, map[attr.Name]struct{}{})
+		tAttrs := tracesgen.TraceAttributesSelector(&span, map[attr.Name]struct{}{
+			attr.GenAIInput:  {},
+			attr.GenAIOutput: {},
+		})
 		traces := tracesgen.GenerateTracesWithAttributes(cache, &span.Service, []attribute.KeyValue{}, hostID, groupFromSpanAndAttributes(&span, tAttrs), reporterName)
 
 		spans := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans()

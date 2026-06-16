@@ -245,24 +245,71 @@ func parseOpenAIInput(body []byte) request.OpenAIInput {
 // the given field name using bracket matching. This is a fallback for when
 // json.Unmarshal fails on truncated JSON but the target field's value is
 // complete within the captured bytes.
+//
+// The scan is depth-aware: the key is only matched when we are at the
+// top-level object (depth == 1) and not currently inside a JSON string,
+// which avoids false positives from occurrences nested in strings or
+// inner objects.
 func extractJSONRawField(body []byte, field string) json.RawMessage {
-	key := `"` + field + `"`
-	idx := bytes.Index(body, []byte(key))
-	if idx < 0 {
+	keyBytes := []byte(`"` + field + `"`)
+
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(body); i++ {
+		ch := body[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if inString {
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		if ch == '"' {
+			if depth == 1 && i+len(keyBytes) <= len(body) && bytes.Equal(body[i:i+len(keyBytes)], keyBytes) {
+				return extractJSONRawValue(body, i+len(keyBytes))
+			}
+			inString = true
+			continue
+		}
+
+		switch ch {
+		case '{', '[':
+			depth++
+		case '}', ']':
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
+
+	return nil
+}
+
+// extractJSONRawValue extracts the JSON object or array value starting after
+// the position of a matched key. It skips whitespace and the colon
+// separator, then uses bracket matching (with string/escape awareness) to
+// find the matching closing bracket. Returns nil for scalar values or when
+// the value is truncated.
+func extractJSONRawValue(body []byte, start int) json.RawMessage {
+	pos := start
+	for pos < len(body) && (body[pos] == ' ' || body[pos] == '\t' || body[pos] == '\n' || body[pos] == '\r' || body[pos] == ':') {
+		pos++
+	}
+	if pos >= len(body) {
 		return nil
 	}
 
-	// Skip past the key and the colon separator.
-	rest := body[idx+len(key):]
-	i := 0
-	for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t' || rest[i] == '\n' || rest[i] == '\r' || rest[i] == ':') {
-		i++
-	}
-	if i >= len(rest) {
-		return nil
-	}
-
-	open := rest[i]
+	open := body[pos]
 	var closeBracket byte
 	switch open {
 	case '[':
@@ -276,8 +323,8 @@ func extractJSONRawField(body []byte, field string) json.RawMessage {
 	depth := 0
 	inString := false
 	escaped := false
-	for j := i; j < len(rest); j++ {
-		ch := rest[j]
+	for j := pos; j < len(body); j++ {
+		ch := body[j]
 		if escaped {
 			escaped = false
 			continue
@@ -299,7 +346,7 @@ func extractJSONRawField(body []byte, field string) json.RawMessage {
 		case closeBracket:
 			depth--
 			if depth == 0 {
-				return json.RawMessage(rest[i : j+1])
+				return json.RawMessage(body[pos : j+1])
 			}
 		}
 	}
