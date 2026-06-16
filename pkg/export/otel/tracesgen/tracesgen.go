@@ -1037,7 +1037,7 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 				}
 			}
 			if ai.Input.GetTopN() > 0 {
-				attrs = append(attrs, attribute.Int("gen_ai.request.top_k", ai.Input.GetTopN()))
+				attrs = append(attrs, attribute.Int("gen_ai.rerank.top_n", ai.Input.GetTopN()))
 			}
 			if ai.Output.Error != nil && ai.Output.Error.Type != "" {
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Output.Error.Type))
