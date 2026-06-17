@@ -53,6 +53,7 @@ type openAIStreamToolCall struct {
 // and returns the aggregated response with usage statistics and tool calls.
 func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolCall) {
 	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
 	response := &request.VendorOpenAI{}
 
 	var finishReason string
@@ -62,7 +63,6 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 	type toolCallAccum struct {
 		id   string
 		name string
-		args strings.Builder
 	}
 	var accumulators []toolCallAccum
 
@@ -138,11 +138,13 @@ func parseOpenAIStream(reader io.Reader) (*request.VendorOpenAI, []request.ToolC
 				if tc.Function.Name != "" {
 					accumulators[idx].name = tc.Function.Name
 				}
-				if tc.Function.Arguments != "" {
-					accumulators[idx].args.WriteString(tc.Function.Arguments)
-				}
+
 			}
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		slog.Debug("parseOpenAIStream: scanner error", "error", err)
 	}
 
 	// Build the Choices JSON with the aggregated message content and

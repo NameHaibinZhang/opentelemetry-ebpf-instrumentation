@@ -327,7 +327,10 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 		body, readErr := io.ReadAll(req.Body)
 		if readErr == nil && len(body) == 0 {
 			if recovered := recoverJSONBodyFromBuffer(requestBuffer); len(recovered) > 0 {
-				body = recovered
+				if int64(len(recovered)) > req.ContentLength {
+					recovered = recovered[:req.ContentLength]
+				}
+				body = append([]byte(nil), recovered...)
 			}
 		}
 		req.Body = io.NopCloser(bytes.NewBuffer(body))
@@ -352,9 +355,9 @@ func recoverJSONBodyFromBuffer(buf *largebuf.LargeBuffer) []byte {
 	}
 	bodyStart := headerEnd + 4
 
-	// Scan forward from header end to find a JSON object.
+	// Scan forward from header end to find a JSON object or array.
 	for i := bodyStart; i < len(raw); i++ {
-		if raw[i] == '{' {
+		if raw[i] == '{' || raw[i] == '[' {
 			return raw[i:]
 		}
 	}

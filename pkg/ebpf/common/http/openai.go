@@ -78,17 +78,16 @@ func OpenAISpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 	slog.Debug("OpenAI", "request", string(reqB), "response", string(respB))
 
 	parsedRequest := parseOpenAIInput(reqB)
-	var parsedResponse request.VendorOpenAI
+	var parsedResponse *request.VendorOpenAI
 	var toolCalls []request.ToolCall
 
 	if looksLikeJSON(respB) {
-		parsedResponse = parseVendorOpenAI(respB)
+		resp := parseVendorOpenAI(respB)
+		parsedResponse = &resp
 		toolCalls = extractToolCalls(parsedResponse.Choices)
 	} else {
 		reader := bytes.NewReader(respB)
-		streamResponse, tc := parseOpenAIStream(reader)
-		parsedResponse = *streamResponse
-		toolCalls = tc
+		parsedResponse, toolCalls = parseOpenAIStream(reader)
 	}
 
 	if parsedResponse.ResponseModel == "" {
@@ -118,7 +117,7 @@ func OpenAISpan(baseSpan *request.Span, req *http.Request, resp *http.Response) 
 
 	baseSpan.SubType = request.HTTPSubtypeOpenAI
 	baseSpan.GenAI = &request.GenAI{
-		OpenAI: &parsedResponse,
+		OpenAI: parsedResponse,
 	}
 
 	return *baseSpan, true
