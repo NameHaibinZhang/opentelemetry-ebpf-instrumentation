@@ -201,6 +201,9 @@ static __always_inline void finish_possible_delayed_http_request(pid_connection_
     }
     http_info_t *info = bpf_map_lookup_elem(&ongoing_http, pid_conn);
     if (info && info->delayed) {
+        if (info->ssl) {
+            return;
+        }
         finish_http(info, pid_conn);
     }
 }
