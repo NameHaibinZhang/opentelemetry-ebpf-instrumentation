@@ -161,6 +161,11 @@ int BPF_UPROBE(obi_uprobe_ssl_write, void *ssl, const void *buf, int num) {
 
     bpf_dbg_printk("=== uprobe SSL_write id=%d ssl=%llx ===", id, ssl);
 
+    ssl_pid_connection_info_t *s_conn = bpf_map_lookup_elem(&ssl_to_conn, &ssl);
+    if (s_conn) {
+        submit_delayed_tls_http_response(&s_conn->p_conn, ssl);
+    }
+
     ssl_args_t args = {};
     args.buf = (u64)buf;
     args.ssl = (u64)ssl;
@@ -211,6 +216,11 @@ int BPF_UPROBE(obi_uprobe_ssl_write_ex,
 
     bpf_dbg_printk("=== SSL_write_ex id=%d ssl=%llx ===", id, ssl);
 
+    ssl_pid_connection_info_t *s_conn = bpf_map_lookup_elem(&ssl_to_conn, &ssl);
+    if (s_conn) {
+        submit_delayed_tls_http_response(&s_conn->p_conn, ssl);
+    }
+
     ssl_args_t args = {};
     args.buf = (u64)buf;
     args.ssl = (u64)ssl;
@@ -240,6 +250,11 @@ int BPF_UPROBE(obi_uprobe_ssl_write_ex2,
     }
 
     bpf_dbg_printk("=== SSL_write_ex2 id=%d ssl=%llx ===", id, ssl);
+
+    ssl_pid_connection_info_t *s_conn = bpf_map_lookup_elem(&ssl_to_conn, &ssl);
+    if (s_conn) {
+        submit_delayed_tls_http_response(&s_conn->p_conn, ssl);
+    }
 
     ssl_args_t args = {};
     args.buf = (u64)buf;
@@ -324,6 +339,7 @@ int BPF_UPROBE(obi_uprobe_ssl_shutdown, void *s) {
 
     ssl_pid_connection_info_t *s_conn = bpf_map_lookup_elem(&ssl_to_conn, &s);
     if (s_conn) {
+        submit_delayed_tls_http_response(&s_conn->p_conn, s);
         finish_possible_delayed_tls_http_request(&s_conn->p_conn, s);
         bpf_map_delete_elem(&active_ssl_connections, &s_conn->p_conn);
     }
