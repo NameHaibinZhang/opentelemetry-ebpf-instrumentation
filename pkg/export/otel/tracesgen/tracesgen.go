@@ -43,6 +43,7 @@ var (
 	genAIUsageReasoningOutputTokens    = attribute.Key("gen_ai.usage.reasoning.output_tokens")
 	openAIAPITypeKey                   = attribute.Key("openai.api.type")
 	awsBedrockGuardrailIDKey           = attribute.Key("aws.bedrock.guardrail.id")
+	genAIUserTimeToFirstTokenKey       = attribute.Key("gen_ai.user.time_to_first_token")
 )
 
 type TraceSpanAndAttributes struct {
@@ -232,11 +233,6 @@ func generateTracesWithAttributes(
 			appendSpanLinks(s, span.Links)
 		}
 		s.SetEndTimestamp(pcommon.NewTimestampFromTime(t.End))
-
-		// Create individual execute_tool child spans per tool call (OTel GenAI semconv compliance)
-		if toolCalls := getSpanToolCalls(span); len(toolCalls) > 0 {
-			createToolCallSpans(toolCalls, spanID, traceID, &ss, start, t.End)
-		}
 	}
 	return traces
 }
@@ -377,8 +373,6 @@ func acceptSpan(is instrumentations.InstrumentationSelection, span *request.Span
 		return is.CouchbaseEnabled()
 	case request.EventTypeMemcachedClient, request.EventTypeMemcachedServer:
 		return is.MemcachedEnabled()
-	case request.EventTypeAerospikeClient:
-		return is.AerospikeEnabled()
 	}
 
 	return false
@@ -391,49 +385,36 @@ var (
 	spanMetricsSkip     = attribute.Bool(string(attr.SkipSpanMetrics), true)
 )
 
-// getSpanToolCalls extracts tool calls from a GenAI span regardless of vendor.
-func getSpanToolCalls(span *request.Span) []request.ToolCall {
-	if span.GenAI == nil {
+// genAIToolCallAttributes returns trace attributes for LLM tool calls.
+// Only tool calls with non-empty names are included. Names and IDs are kept
+// aligned so that the same index refers to the same tool call.
+func genAIToolCallAttributes(toolCalls []request.ToolCall) []attribute.KeyValue {
+	if len(toolCalls) == 0 {
 		return nil
 	}
-	switch {
-	case span.GenAI.OpenAI != nil:
-		return span.GenAI.OpenAI.ToolCalls
-	case span.GenAI.Anthropic != nil:
-		return span.GenAI.Anthropic.ToolCalls
-	case span.GenAI.Gemini != nil:
-		return span.GenAI.Gemini.ToolCalls
-	case span.GenAI.Qwen != nil:
-		return span.GenAI.Qwen.ToolCalls
-	default:
-		return nil
-	}
-}
 
-// createToolCallSpans creates individual execute_tool child spans for each tool call,
-// following the OTel GenAI semantic conventions where gen_ai.tool.name is a single string
-// per span rather than an aggregated string array.
-func createToolCallSpans(toolCalls []request.ToolCall, parentSpanID pcommon.SpanID, traceID pcommon.TraceID, ss *ptrace.ScopeSpans, start, end time.Time) {
+	var names []string
+	var ids []string
+	hasIDs := false
 	for _, tc := range toolCalls {
 		if tc.Name == "" {
 			continue
 		}
-		sp := ss.Spans().AppendEmpty()
-		sp.SetName("execute_tool " + tc.Name)
-		sp.SetKind(ptrace.SpanKindInternal)
-		sp.SetTraceID(traceID)
-		sp.SetSpanID(pcommon.SpanID(idgen.RandomSpanID()))
-		sp.SetParentSpanID(parentSpanID)
-		sp.SetStartTimestamp(pcommon.NewTimestampFromTime(start))
-		sp.SetEndTimestamp(pcommon.NewTimestampFromTime(end))
-
-		attrs := sp.Attributes()
-		attrs.PutStr(string(semconv.GenAIOperationNameKey), "execute_tool")
-		attrs.PutStr(string(attr.GenAIToolName), tc.Name)
+		names = append(names, tc.Name)
+		ids = append(ids, tc.ID)
 		if tc.ID != "" {
-			attrs.PutStr(string(attr.GenAIToolCallID), tc.ID)
+			hasIDs = true
 		}
 	}
+
+	var attrs []attribute.KeyValue
+	if len(names) > 0 {
+		attrs = append(attrs, attribute.StringSlice(string(attr.GenAIToolName), names))
+	}
+	if hasIDs {
+		attrs = append(attrs, attribute.StringSlice(string(attr.GenAIToolCallID), ids))
+	}
+	return attrs
 }
 
 // mcpAttributes returns MCP span attributes following the OTEL MCP semantic conventions.
@@ -779,6 +760,10 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 					attrs = append(attrs, semconv.GenAIRequestEncodingFormats(ai.Request.EncodingFormat))
 				}
 			}
+			attrs = append(attrs, genAIToolCallAttributes(ai.ToolCalls)...)
+			if ttft := genAITimeToFirstToken(span); ttft > 0 {
+				attrs = append(attrs, genAIUserTimeToFirstTokenKey.Int64(ttft))
+			}
 		}
 
 		if span.SubType == request.HTTPSubtypeAnthropic && span.GenAI != nil && span.GenAI.Anthropic != nil {
@@ -849,6 +834,10 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			// add error info
 			if ai.Output.Error != nil && ai.Output.Error.Type != "" {
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Output.Error.Type))
+			}
+			attrs = append(attrs, genAIToolCallAttributes(ai.ToolCalls)...)
+			if ttft := genAITimeToFirstToken(span); ttft > 0 {
+				attrs = append(attrs, genAIUserTimeToFirstTokenKey.Int64(ttft))
 			}
 		}
 
@@ -927,6 +916,10 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			}
 			if ai.Output.Error != nil && ai.Output.Error.Status != "" {
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Output.Error.Status))
+			}
+			attrs = append(attrs, genAIToolCallAttributes(ai.ToolCalls)...)
+			if ttft := genAITimeToFirstToken(span); ttft > 0 {
+				attrs = append(attrs, genAIUserTimeToFirstTokenKey.Int64(ttft))
 			}
 		}
 
@@ -1013,6 +1006,10 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			if ai.Error.Type != "" {
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Error.Type))
 			}
+			attrs = append(attrs, genAIToolCallAttributes(ai.ToolCalls)...)
+			if ttft := genAITimeToFirstToken(span); ttft > 0 {
+				attrs = append(attrs, genAIUserTimeToFirstTokenKey.Int64(ttft))
+			}
 		}
 
 		if span.SubType == request.HTTPSubtypeAWSBedrock && span.GenAI != nil && span.GenAI.Bedrock != nil {
@@ -1068,6 +1065,9 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			}
 			if ai.Output.ErrorType != "" {
 				attrs = append(attrs, semconv.ErrorTypeKey.String(ai.Output.ErrorType))
+			}
+			if ttft := genAITimeToFirstToken(span); ttft > 0 {
+				attrs = append(attrs, genAIUserTimeToFirstTokenKey.Int64(ttft))
 			}
 		}
 
@@ -1354,34 +1354,6 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 		if span.DBNamespace != "" {
 			attrs = append(attrs, request.DBNamespace(span.DBNamespace))
 		}
-	case request.EventTypeAerospikeClient:
-		attrs = []attribute.KeyValue{
-			request.ServerAddr(request.HostAsServer(span)),
-			request.ServerPort(span.HostPort),
-			request.PeerService(request.PeerServiceFromSpan(span)),
-			request.DBSystemName("aerospike"),
-		}
-		if span.Method != "" {
-			attrs = append(attrs, request.DBOperationName(span.Method))
-		}
-		if span.Path != "" {
-			attrs = append(attrs, request.DBCollectionName(span.Path))
-		}
-		if span.DBNamespace != "" {
-			attrs = append(attrs, request.DBNamespace(span.DBNamespace))
-		}
-		if span.DBBatchSize > 0 {
-			attrs = append(attrs, request.DBOperationBatchSize(span.DBBatchSize))
-		}
-		if _, ok := optionalAttrs[attr.DBQueryText]; ok {
-			if span.Statement != "" {
-				attrs = append(attrs, request.DBQueryText(span.Statement))
-			}
-		}
-		if span.Status != 0 {
-			attrs = append(attrs, request.DBResponseStatusCode(span.DBError.ErrorCode))
-			attrs = append(attrs, attributes.DBResponseErrorAttr(optionalAttrs, span.DBError.Description)...)
-		}
 	case request.EventTypeMemcachedClient, request.EventTypeMemcachedServer:
 		attrs = []attribute.KeyValue{
 			request.ServerAddr(request.HostAsServer(span)),
@@ -1437,6 +1409,13 @@ func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]str
 	return traceAttributesSelectorInternal(span, optionalAttrs, buildRedactSet(redactKeys))
 }
 
+func genAITimeToFirstToken(span *request.Span) int64 {
+	if span.FirstByteTime > 0 && span.RequestStart > 0 && span.FirstByteTime > span.RequestStart {
+		return span.FirstByteTime - span.RequestStart
+	}
+	return 0
+}
+
 func genAISpanKind(operationName string) string {
 	switch operationName {
 	case "chat", "text_completion", "generate_content", "generation",
@@ -1459,7 +1438,7 @@ func spanKind(span *request.Span) trace2.SpanKind {
 	switch span.Type {
 	case request.EventTypeHTTP, request.EventTypeGRPC, request.EventTypeRedisServer, request.EventTypeKafkaServer, request.EventTypeMQTTServer, request.EventTypeNATSServer, request.EventTypeSunRPCServer, request.EventTypeMemcachedServer, request.EventTypeSQLServer:
 		return trace2.SpanKindServer
-	case request.EventTypeHTTPClient, request.EventTypeGRPCClient, request.EventTypeSQLClient, request.EventTypeRedisClient, request.EventTypeMongoClient, request.EventTypeCouchbaseClient, request.EventTypeMemcachedClient, request.EventTypeSunRPCClient, request.EventTypeAerospikeClient, request.EventTypeFailedConnect:
+	case request.EventTypeHTTPClient, request.EventTypeGRPCClient, request.EventTypeSQLClient, request.EventTypeRedisClient, request.EventTypeMongoClient, request.EventTypeCouchbaseClient, request.EventTypeMemcachedClient, request.EventTypeSunRPCClient, request.EventTypeFailedConnect:
 		return trace2.SpanKindClient
 	case request.EventTypeKafkaClient, request.EventTypeMQTTClient, request.EventTypeNATSClient, request.EventTypeAMQPClient:
 		switch span.Method {
