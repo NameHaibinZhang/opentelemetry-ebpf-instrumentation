@@ -246,6 +246,12 @@ HTTPParsingPolicy defines the default action for http enrichment rules.
 
 #### `ebpf.payload_extraction.http.genai`
 
+#### `ebpf.payload_extraction.http.genai.agent`
+
+| YAML Path | Type | Env Var | Default | Values | Deprecated | Description |
+|---|---|---|---|---|---|---|
+| `ebpf.payload_extraction.http.genai.agent.enabled` | `boolean` | `OTEL_EBPF_HTTP_AGENT_ENABLED` | `false` |  |  | Enable AI Agent frameworks (OpenAI Assistants, AWS Bedrock Agents) payload extraction and parsing |
+
 #### `ebpf.payload_extraction.http.genai.anthropic`
 
 | YAML Path | Type | Env Var | Default | Values | Deprecated | Description |
