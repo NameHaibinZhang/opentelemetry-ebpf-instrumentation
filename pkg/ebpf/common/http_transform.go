@@ -190,6 +190,17 @@ func httpRequestResponseToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo, r
 		}
 	}
 
+	// Agent detection must run before OpenAI chat detection because
+	// OpenAI Assistants and regular chat share the same host
+	// (api.openai.com); the agent detector uses path patterns
+	// (/v1/threads/*/runs) to distinguish the two.
+	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.GenAI.Agent.Enabled {
+		span, ok := ebpfhttp.AgentSpan(&httpSpan, req, resp)
+		if ok {
+			return span
+		}
+	}
+
 	if isClientEvent(event.Type) && parseCtx != nil && parseCtx.payloadExtraction.HTTP.GenAI.OpenAI.Enabled {
 		span, ok := ebpfhttp.OpenAISpan(&httpSpan, req, resp)
 		if ok {

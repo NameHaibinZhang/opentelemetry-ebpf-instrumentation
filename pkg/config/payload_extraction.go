@@ -87,13 +87,16 @@ type GenAIConfig struct {
 	Rerank RerankConfig `yaml:"rerank"`
 	// Vector retrieval payload extraction and parsing (Pinecone, Qdrant, Milvus, Chroma, Weaviate, etc.)
 	Retrieval RetrievalConfig `yaml:"retrieval"`
+	// AI Agent frameworks (OpenAI Assistants, AWS Bedrock Agents) payload extraction and parsing
+	Agent AgentConfig `yaml:"agent"`
 }
 
 func (g *GenAIConfig) Enabled() bool {
 	return g.Anthropic.Enabled || g.OpenAI.Enabled ||
 		g.Gemini.Enabled || g.Qwen.Enabled || g.Bedrock.Enabled ||
 		g.MCP.Enabled ||
-		g.Embedding.Enabled || g.Rerank.Enabled || g.Retrieval.Enabled
+		g.Embedding.Enabled || g.Rerank.Enabled || g.Retrieval.Enabled ||
+		g.Agent.Enabled
 }
 
 type OpenAIConfig struct {
@@ -139,6 +142,11 @@ type RerankConfig struct {
 type RetrievalConfig struct {
 	// Enable vector retrieval (Pinecone, Qdrant, Milvus, Chroma, Weaviate, etc.) payload extraction and parsing
 	Enabled bool `yaml:"enabled" env:"OTEL_EBPF_HTTP_RETRIEVAL_ENABLED" validate:"boolean"`
+}
+
+type AgentConfig struct {
+	// Enable AI Agent frameworks (OpenAI Assistants, AWS Bedrock Agents) payload extraction and parsing
+	Enabled bool `yaml:"enabled" env:"OTEL_EBPF_HTTP_AGENT_ENABLED" validate:"boolean"`
 }
 
 type JSONRPCConfig struct {

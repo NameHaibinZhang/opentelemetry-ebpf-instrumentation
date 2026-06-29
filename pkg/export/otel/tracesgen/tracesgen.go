@@ -1133,6 +1133,35 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			}
 		}
 
+		if span.SubType == request.HTTPSubtypeAgent && span.GenAI != nil && span.GenAI.Agent != nil {
+			ai := span.GenAI.Agent
+			attrs = append(attrs, semconv.GenAIOperationNameKey.String(ai.OperationName()))
+			if ai.AgentID != "" {
+				attrs = append(attrs, attribute.String("gen_ai.agent.id", ai.AgentID))
+			}
+			if ai.AgentName != "" {
+				attrs = append(attrs, attribute.String("gen_ai.agent.name", ai.AgentName))
+			}
+			if ai.SessionID != "" {
+				attrs = append(attrs, semconv.GenAIConversationID(ai.SessionID))
+			}
+			if ai.RunID != "" {
+				attrs = append(attrs, semconv.GenAIResponseID(ai.RunID))
+			}
+			if ai.Provider != "" {
+				attrs = append(attrs, semconv.GenAIProviderNameKey.String(ai.Provider))
+			}
+			if ai.Model != "" {
+				attrs = append(attrs, semconv.GenAIRequestModel(ai.Model))
+			}
+			if ai.InputTokens > 0 {
+				attrs = append(attrs, semconv.GenAIUsageInputTokens(ai.InputTokens))
+			}
+			if ai.OutputTokens > 0 {
+				attrs = append(attrs, semconv.GenAIUsageOutputTokens(ai.OutputTokens))
+			}
+		}
+
 		attrs = append(attrs, jsonRPCAttributes(span)...)
 		attrs = append(attrs, httpEnrichmentAttributes(span)...)
 	case request.EventTypeGRPCClient:

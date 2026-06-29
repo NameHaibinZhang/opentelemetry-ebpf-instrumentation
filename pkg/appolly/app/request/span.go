@@ -110,6 +110,7 @@ const (
 	HTTPSubtypeEmbedding     = 13 // http + generic embedding provider (Voyage, Cohere, Jina)
 	HTTPSubtypeRerank        = 14 // http + Rerank (Cohere, Jina, Voyage, etc.)
 	HTTPSubtypeRetrieval     = 15 // http + vector retrieval (Pinecone, Qdrant, Milvus, Chroma, Weaviate, etc.)
+	HTTPSubtypeAgent         = 16 // http + AI Agent frameworks (OpenAI Assistants, AWS Bedrock Agents)
 )
 
 func IsGenAISubtype(subtype int) bool {
@@ -121,7 +122,8 @@ func IsGenAISubtype(subtype int) bool {
 		subtype == HTTPSubtypeMCP ||
 		subtype == HTTPSubtypeEmbedding ||
 		subtype == HTTPSubtypeRerank ||
-		subtype == HTTPSubtypeRetrieval
+		subtype == HTTPSubtypeRetrieval ||
+		subtype == HTTPSubtypeAgent
 }
 
 //nolint:cyclop
@@ -293,6 +295,7 @@ type GenAI struct {
 	Embedding *VendorEmbedding
 	Rerank    *VendorRerank
 	Retrieval *VendorRetrieval
+	Agent     *VendorAgent
 }
 
 type OpenAIPromptTokensDetails struct {
@@ -1125,6 +1128,38 @@ type RetrievalUsage struct {
 	PromptTokens int `json:"prompt_tokens,omitempty"`
 }
 
+// AgentOperationName is the canonical operation name for AI agent spans.
+const AgentOperationName = "invoke_agent"
+
+// VendorAgent holds parsed data from an AI agent framework invocation
+// (OpenAI Assistants, AWS Bedrock Agents, etc.).
+type VendorAgent struct {
+	Provider     string
+	AgentID      string
+	AgentName    string
+	SessionID    string
+	RunID        string
+	Model        string
+	Status       string
+	InputTokens  int
+	OutputTokens int
+}
+
+// OperationName returns the canonical agent operation name.
+func (a *VendorAgent) OperationName() string {
+	return AgentOperationName
+}
+
+// GetInputTokens returns the input token count.
+func (a *VendorAgent) GetInputTokens() int {
+	return a.InputTokens
+}
+
+// GetOutputTokens returns the output token count.
+func (a *VendorAgent) GetOutputTokens() int {
+	return a.OutputTokens
+}
+
 type SpanLink struct {
 	TraceID    trace.TraceID `json:"traceID"`
 	SpanID     trace.SpanID  `json:"spanID"`
@@ -1887,6 +1922,14 @@ func (s *Span) TraceName() string {
 				return RetrievalOperationName + " " + s.GenAI.Retrieval.Provider
 			}
 			return RetrievalOperationName
+		}
+
+		if s.Type == EventTypeHTTPClient && s.SubType == HTTPSubtypeAgent && s.GenAI != nil && s.GenAI.Agent != nil {
+			op := s.GenAI.Agent.OperationName()
+			if s.GenAI.Agent.AgentID != "" {
+				return op + " " + s.GenAI.Agent.AgentID
+			}
+			return op
 		}
 
 		if s.SubType == HTTPSubtypeJSONRPC && s.JSONRPC != nil {
