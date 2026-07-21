@@ -158,8 +158,37 @@ type RetrievalConfig struct {
 type OpenAICompatibleConfig struct {
 	// Enable OpenAI-compatible gateway payload extraction and parsing
 	Enabled bool `yaml:"enabled" env:"OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_ENABLED" validate:"boolean"`
-	// Opt-in allowlist of gateway destinations to match by host (case-insensitive) with optional port and provider name
-	Gateways []OpenAICompatibleGateway `yaml:"gateways" validate:"dive"`
+	// Opt-in allowlist of gateway destinations to match by host (case-insensitive) with optional port and provider name.
+	// Via environment variable, provide the same list in YAML (or JSON) form, e.g.
+	// OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_GATEWAYS='[{host: litellm.example.com, provider: litellm}, {host: localhost, port: 8080, provider: vllm}]'
+	Gateways OpenAICompatibleGateways `yaml:"gateways" env:"OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_GATEWAYS" validate:"dive"`
+}
+
+// OpenAICompatibleGateways is a list of OpenAI-compatible gateway destinations.
+// It implements encoding.TextUnmarshaler so the whole list can be provided through a
+// single environment variable using the same YAML/JSON shape as the config file.
+type OpenAICompatibleGateways []OpenAICompatibleGateway
+
+// UnmarshalText parses the gateway list from an environment variable value using the
+// same YAML/JSON shape as the config file (e.g. a flow-style list
+// "[{host: h, port: p, provider: pr}, ...]" or a multi-line block list). It is only
+// invoked for scalar values; YAML list syntax in the config file continues to be
+// decoded natively.
+func (g *OpenAICompatibleGateways) UnmarshalText(text []byte) error {
+	if len(strings.TrimSpace(string(text))) == 0 {
+		*g = nil
+		return nil
+	}
+
+	// Decode into the underlying element slice (not the named type) to avoid recursing
+	// back into this UnmarshalText.
+	var out []OpenAICompatibleGateway
+	if err := yaml.Unmarshal(text, &out); err != nil {
+		return fmt.Errorf("parsing OpenAI-compatible gateways: %w", err)
+	}
+
+	*g = out
+	return nil
 }
 
 type OpenAICompatibleGateway struct {
