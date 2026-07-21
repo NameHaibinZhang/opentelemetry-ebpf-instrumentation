@@ -36,6 +36,7 @@ import (
 // Attribute keys not yet available in semconv v1.41.0.
 // Replace with semconv helpers when the package is updated.
 var (
+	genAISpanKindKey                   = attribute.Key("gen_ai.span.kind")
 	genAIRequestStreamKey              = attribute.Key("gen_ai.request.stream")
 	genAIUsageCacheCreationInputTokens = attribute.Key("gen_ai.usage.cache_creation.input_tokens")
 	genAIUsageCacheReadInputTokens     = attribute.Key("gen_ai.usage.cache_read.input_tokens")
@@ -450,6 +451,7 @@ func mcpAttributes(span *request.Span, optionalAttrs map[attr.Name]struct{}) []a
 	attrs := []attribute.KeyValue{
 		attribute.String(string(attr.MCPMethodName), mcp.Method),
 		semconv.GenAIOperationNameKey.String(mcp.OperationName()),
+		genAISpanKindKey.String(genAISpanKind(mcp.OperationName())),
 	}
 	if mcp.ToolName != "" {
 		attrs = append(attrs, attribute.String(string(attr.GenAIToolName), mcp.ToolName))
@@ -722,6 +724,11 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 				// derived rather than emitting an empty value.
 				attrs = append(attrs, semconv.GenAIOperationNameKey.String(ai.OperationName))
 			}
+			// gen_ai.span.kind must be emitted unconditionally (genAISpanKind
+			// defaults to "LLM" for an unknown/empty operation), matching every
+			// other provider block. Keeping it inside the OperationName guard
+			// dropped the attribute whenever the operation could not be derived.
+			attrs = append(attrs, genAISpanKindKey.String(genAISpanKind(ai.OperationName)))
 			attrs = append(attrs, semconv.GenAIResponseID(ai.ID))
 			if ai.OperationName == "conversation" || ai.OperationName == "chatkit.session" || ai.OperationName == "chatkit.thread" {
 				attrs = append(attrs, semconv.GenAIConversationID(ai.ID))
@@ -826,6 +833,11 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 				// captured rather than emitting an empty value.
 				attrs = append(attrs, semconv.GenAIOperationNameKey.String(ai.Output.Type))
 			}
+			// gen_ai.span.kind must be emitted unconditionally (genAISpanKind
+			// defaults to "LLM" for an unknown/empty operation), matching every
+			// other provider block. Keeping it inside the Output.Type guard
+			// dropped the attribute whenever the response type was not captured.
+			attrs = append(attrs, genAISpanKindKey.String(genAISpanKind(ai.Output.Type)))
 			if ai.Output.Error != nil && ai.Output.Error.Type != "" {
 				attrs = append(attrs, semconv.GenAIResponseID(ai.Output.RequestID))
 			} else {
@@ -886,6 +898,7 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			ai := span.GenAI.Gemini
 			attrs = append(attrs, semconv.GenAIProviderNameGCPGemini)
 			attrs = append(attrs, semconv.GenAIOperationNameKey.String(ai.OperationName()))
+			attrs = append(attrs, genAISpanKindKey.String(genAISpanKind(ai.OperationName())))
 			if ai.Output.ResponseID != "" {
 				attrs = append(attrs, semconv.GenAIResponseID(ai.Output.ResponseID))
 			}
@@ -969,6 +982,11 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 				// (re-typed to string in schemas/obi/groups/gen_ai.yaml).
 				attrs = append(attrs, semconv.GenAIOperationNameKey.String(ai.OperationName))
 			}
+			// gen_ai.span.kind must be emitted unconditionally (genAISpanKind
+			// defaults to "LLM" for an unknown/empty operation), matching every
+			// other provider block. The Qwen block was rewritten without it,
+			// dropping the attribute from every Qwen trace.
+			attrs = append(attrs, genAISpanKindKey.String(genAISpanKind(ai.OperationName)))
 			attrs = append(attrs, semconv.GenAIResponseID(ai.ID))
 			attrs = append(attrs, semconv.GenAIRequestModel(ai.Request.Model))
 			if ai.ResponseModel != "" {
@@ -1093,6 +1111,7 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			ai := span.GenAI.OpenAICompatible
 			attrs = append(attrs, semconv.GenAIProviderNameKey.String(span.GenAIProviderName()))
 			attrs = append(attrs, semconv.GenAIOperationNameKey.String(ai.OperationName))
+			attrs = append(attrs, genAISpanKindKey.String(genAISpanKind(ai.OperationName)))
 			attrs = append(attrs, semconv.GenAIResponseID(ai.ID))
 			attrs = append(attrs, semconv.GenAIRequestModel(ai.Request.Model))
 			if ai.ResponseModel != "" {
@@ -1182,6 +1201,7 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			ai := span.GenAI.Bedrock
 			attrs = append(attrs, semconv.GenAIProviderNameAWSBedrock)
 			attrs = append(attrs, semconv.GenAIOperationNameKey.String("invoke_model"))
+			attrs = append(attrs, genAISpanKindKey.String("LLM"))
 			attrs = append(attrs, semconv.GenAIRequestModel(ai.Model))
 			attrs = append(attrs, semconv.GenAIResponseModel(ai.Model))
 			if ai.Input.MaxTokens > 0 {
@@ -1238,6 +1258,7 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			ai := span.GenAI.Rerank
 			attrs = append(attrs, semconv.GenAIProviderNameKey.String(ai.Provider))
 			attrs = append(attrs, semconv.GenAIOperationNameKey.String("rerank"))
+			attrs = append(attrs, genAISpanKindKey.String("RERANKER"))
 			attrs = append(attrs, semconv.GenAIRequestModel(ai.Input.Model))
 			if ai.Output.Model != "" {
 				attrs = append(attrs, semconv.GenAIResponseModel(ai.Output.Model))
@@ -1272,6 +1293,7 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			ai := span.GenAI.Embedding
 			attrs = append(attrs, semconv.GenAIProviderNameKey.String(ai.Provider))
 			attrs = append(attrs, semconv.GenAIOperationNameKey.String(ai.OperationName()))
+			attrs = append(attrs, genAISpanKindKey.String("EMBEDDING"))
 			model := ai.Input.Model
 			if model == "" {
 				model = ai.Model
@@ -1295,6 +1317,7 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			ai := span.GenAI.Retrieval
 			attrs = append(attrs, semconv.GenAIProviderNameKey.String(ai.Provider))
 			attrs = append(attrs, semconv.GenAIOperationNameKey.String(ai.OperationName()))
+			attrs = append(attrs, genAISpanKindKey.String("RETRIEVER"))
 			if ai.Input.Model != "" {
 				attrs = append(attrs, semconv.GenAIRequestModel(ai.Input.Model))
 			}
@@ -1609,6 +1632,24 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 // TraceAttributesSelector returns the []attribute.KeyValue for a single span.
 func TraceAttributesSelector(span *request.Span, optionalAttrs map[attr.Name]struct{}, redactKeys ...string) []attribute.KeyValue {
 	return traceAttributesSelectorInternal(span, optionalAttrs, buildRedactSet(redactKeys))
+}
+
+func genAISpanKind(operationName string) string {
+	switch operationName {
+	case "chat", "text_completion", "generate_content", "generation",
+		"invoke_model", "conversation", "chatkit.session", "chatkit.thread":
+		return "LLM"
+	case "embeddings":
+		return "EMBEDDING"
+	case "execute_tool":
+		return "TOOL"
+	case "retrieval":
+		return "RETRIEVER"
+	case "rerank":
+		return "RERANKER"
+	default:
+		return "LLM"
+	}
 }
 
 func spanKind(span *request.Span) trace2.SpanKind {
