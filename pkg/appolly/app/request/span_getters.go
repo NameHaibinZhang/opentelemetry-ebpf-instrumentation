@@ -522,6 +522,10 @@ func spanOTELGetters(name attr.Name) (attributes.Getter[*Span, attribute.KeyValu
 			// empty string carries no information).
 			return attribute.KeyValue{}
 		}
+	case attr.GenAISpanKind:
+		getter = func(s *Span) attribute.KeyValue {
+			return attribute.Key(attr.GenAISpanKind).String(s.GenAISpanKind())
+		}
 	case attr.GenAIProviderName:
 		getter = func(s *Span) attribute.KeyValue {
 			if provider := s.GenAIProviderName(); provider != "" {
