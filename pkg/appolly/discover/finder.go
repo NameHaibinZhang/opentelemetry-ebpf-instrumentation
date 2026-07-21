@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
 	"go.opentelemetry.io/obi/pkg/appolly/services"
@@ -33,6 +34,10 @@ type ProcessFinder struct {
 	runtimeMetrics   *msg.Queue[[]runtimemetrics.RuntimeMetricSnapshot]
 	ebpfEventContext *ebpfcommon.EBPFEventContext
 	doneChan         <-chan error
+	// dynamicCriteria holds hot-reloaded discovery criteria from ConfigMap watcher
+	dynamicCriteria atomic.Pointer[[]services.Selector]
+	// rescanCh is signaled when criteria change and all processes should be re-scanned
+	rescanCh chan struct{}
 }
 
 func NewProcessFinder(
@@ -48,7 +53,20 @@ func NewProcessFinder(
 		tracesInput:      tracesInput,
 		runtimeMetrics:   runtimeMetrics,
 		ebpfEventContext: ebpfEventContext,
+		rescanCh:         make(chan struct{}, 1),
 	}
+}
+
+// DynamicCriteriaPointer returns the atomic pointer used for hot-reloading discovery criteria.
+// The ConfigMap watcher stores updated criteria here.
+func (pf *ProcessFinder) DynamicCriteriaPointer() *atomic.Pointer[[]services.Selector] {
+	return &pf.dynamicCriteria
+}
+
+// RescanChannel returns the channel used to trigger a full process re-scan.
+// Signal this after updating dynamic criteria so existing processes get re-evaluated.
+func (pf *ProcessFinder) RescanChannel() chan<- struct{} {
+	return pf.rescanCh
 }
 
 type processFinderStartConfig struct {
@@ -129,6 +147,7 @@ func (pf *ProcessFinder) Start(ctx context.Context, opts ...ProcessFinderStartOp
 			TargetsChanged: startConfig.dynamicSelector.TargetsChangedNotifyContext(ctx),
 		}
 	}
+	rescan.CriteriaChanged = pf.rescanCh
 	swi.Add(swarm.DirectInstance(ProcessWatcherFunc(pf.cfg, pf.ebpfEventContext, processEvents, configCriteria, rescan, updates)),
 		swarm.WithID("ProcessWatcher"))
 
@@ -155,7 +174,7 @@ func (pf *ProcessFinder) Start(ctx context.Context, opts ...ProcessFinderStartOp
 	), swarm.WithID("LanguageDecoratorProvider"))
 
 	criteriaFilteredEvents := msgh.QueueFromConfig[[]Event[ProcessMatch]](pf.cfg, pf.ctxInfo.Metrics, "criteriaFilteredEvents")
-	swi.Add(criteriaMatcherProvider(pf.cfg, langEnrichedEvents, criteriaFilteredEvents, configCriteria, startConfig.dynamicSelector, updates),
+	swi.Add(criteriaMatcherProvider(pf.cfg, langEnrichedEvents, criteriaFilteredEvents, configCriteria, startConfig.dynamicSelector, updates, &pf.dynamicCriteria),
 		swarm.WithID("CriteriaMatcher"))
 	swi.Add(dynamicMatcherProvider(langEnrichedEvents, criteriaFilteredEvents, appDynamicSelector),
 		swarm.WithID("DynamicMatcher"))
