@@ -8,6 +8,10 @@
 log_level: warn
 
 discovery:
+  exclude_instrument:
+    - k8s_namespace: obi-system
+    - k8s_namespace: ack-onepilot
+    - k8s_namespace: arms-prom
   instrument:
     - exe_path: "*"
 
