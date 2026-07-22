@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/obi/pkg/appolly/services"
 )
@@ -401,10 +402,10 @@ func TestOpenAICompatibleGateways_UnmarshalText(t *testing.T) {
 			var got OpenAICompatibleGateways
 			err := got.UnmarshalText([]byte(tt.input))
 			if tt.wantErr {
-				assert.Error(t, err)
+				require.Error(t, err)
 				return
 			}
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 		})
 	}

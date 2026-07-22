@@ -2210,11 +2210,9 @@
           "x-env-var": "OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_ENABLED"
         },
         "gateways": {
-          "items": {
-            "$ref": "#/$defs/OpenAICompatibleGateway"
-          },
-          "type": "array",
-          "description": "Opt-in allowlist of gateway destinations to match by host (case-insensitive) with optional port and provider name"
+          "$ref": "#/$defs/OpenAICompatibleGateways",
+          "description": "Opt-in allowlist of gateway destinations to match by host (case-insensitive) with optional port and provider name. Via environment variable, provide the same list in YAML (or JSON) form, e.g. OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_GATEWAYS='[{host: litellm.example.com, provider: litellm}, {host: localhost, port: 8080, provider: vllm}]'",
+          "x-env-var": "OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_GATEWAYS"
         }
       },
       "type": "object"
@@ -2235,6 +2233,13 @@
         }
       },
       "type": "object"
+    },
+    "OpenAICompatibleGateways": {
+      "items": {
+        "$ref": "#/$defs/OpenAICompatibleGateway"
+      },
+      "type": "array",
+      "description": "OpenAICompatibleGateways is a list of OpenAI-compatible gateway destinations. It implements encoding.TextUnmarshaler so the whole list can be provided through a single environment variable using the same YAML/JSON shape as the config file."
     },
     "OpenAIConfig": {
       "properties": {

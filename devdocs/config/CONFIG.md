@@ -298,7 +298,7 @@ HTTPParsingPolicy defines the default action for http enrichment rules.
 | YAML Path | Type | Env Var | Default | Values | Deprecated | Description |
 |---|---|---|---|---|---|---|
 | `ebpf.payload_extraction.http.genai.openai_compatible.enabled` | `boolean` | `OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_ENABLED` | `false` |  |  | Enable OpenAI-compatible gateway payload extraction and parsing |
-| `ebpf.payload_extraction.http.genai.openai_compatible.gateways` | [`OpenAICompatibleGateway`](#openaicompatiblegateway)[] |  |  |  |  | Opt-in allowlist of gateway destinations to match by host (case-insensitive) with optional port and provider name |
+| `ebpf.payload_extraction.http.genai.openai_compatible.gateways` | [`OpenAICompatibleGateways`](#openaicompatiblegateways) | `OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_GATEWAYS` |  |  |  | Opt-in allowlist of gateway destinations to match by host (case-insensitive) with optional port and provider name. Via environment variable, provide the same list in YAML (or JSON) form, e.g. OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_GATEWAYS='[{host: litellm.example.com, provider: litellm}, {host: localhost, port: 8080, provider: vllm}]' |
 
 #### `ebpf.payload_extraction.http.genai.qwen`
 
@@ -759,6 +759,14 @@ IntEnum defines an enumeration of integers (e.g. ports or PIDs). It allows a set
 | `host` | `string` |  | Gateway hostname to match (case-insensitive) |
 | `port` | `integer` |  | Destination port; when 0 or omitted, matches any port |
 | `provider` | `string` |  | Name reported in the gen_ai.system span attribute |
+
+### OpenAICompatibleGateways
+
+OpenAICompatibleGateways is a list of OpenAI-compatible gateway destinations. It implements encoding.TextUnmarshaler so the whole list can be provided through a single environment variable using the same YAML/JSON shape as the config file.
+
+| Field | Type | Values | Description |
+|---|---|---|---|
+| (items) | [`OpenAICompatibleGateway`](#openaicompatiblegateway) |  |  |
 
 ### RegexSelector
 
