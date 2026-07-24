@@ -18,6 +18,7 @@
 #include <common/ringbuf.h>
 #include <common/runtime.h>
 #include <common/scratch_mem.h>
+#include <common/strings.h>
 #include <common/trace_helpers.h>
 #include <common/trace_lifecycle.h>
 #include <common/trace_parent.h>
@@ -40,6 +41,60 @@
 volatile const u32 high_request_volume;
 
 SCRATCH_MEM_SIZED(http_previous_trace_id, TRACE_ID_SIZE_BYTES);
+
+// Flags stored in http_info_t.chunked to drive the in-band finish of chunked
+// (e.g. SSE streaming) responses.
+enum {
+    k_http_chunked_detected = 1 << 0,  // Transfer-Encoding: chunked seen on the response head
+    k_http_chunked_last_seen = 1 << 1, // chunked last-chunk terminator seen at a read tail
+};
+
+// Window scanned at the first response packet when detecting chunked encoding.
+#define k_http_chunked_scan_window 256
+
+// http_chunked_token compares the 7 bytes at p to "chunked", case-insensitively.
+static __always_inline bool http_chunked_token(const unsigned char *p) {
+    return lowercase(p[0]) == 'c' && lowercase(p[1]) == 'h' && lowercase(p[2]) == 'u' &&
+           lowercase(p[3]) == 'n' && lowercase(p[4]) == 'k' && lowercase(p[5]) == 'e' &&
+           lowercase(p[6]) == 'd';
+}
+
+// http_response_head_is_chunked scans the beginning of a response read for a
+// "chunked" Transfer-Encoding token. This is only a scoping gate: a false
+// positive merely arms the position-anchored terminator check below, which
+// cannot itself misfire on non-chunked payloads.
+static __always_inline bool http_response_head_is_chunked(const void *u_buf, u32 len) {
+    unsigned char head[k_http_chunked_scan_window];
+    u32 n = len;
+    bpf_clamp_umax(n, k_http_chunked_scan_window);
+    if (n < 7) {
+        return false;
+    }
+    bpf_probe_read(head, k_http_chunked_scan_window, (void *)u_buf);
+    for (u32 i = 0; i + 7 <= k_http_chunked_scan_window; i++) {
+        if (i + 7 > n) {
+            break;
+        }
+        if (http_chunked_token(&head[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// http_read_tail_is_chunk_end reports whether the last 7 bytes of a response
+// read are the chunked last-chunk terminator "\r\n0\r\n\r\n" (the preceding
+// chunk's closing CRLF, the zero-size last chunk, and the terminating CRLF).
+// Anchored at the read tail, so bytes appearing mid-body cannot match.
+static __always_inline bool http_read_tail_is_chunk_end(const void *u_buf, u32 len) {
+    if (len < 7) {
+        return false;
+    }
+    unsigned char tail[7];
+    bpf_probe_read(tail, sizeof(tail), (void *)((const u8 *)u_buf + (len - 7)));
+    return tail[0] == '\r' && tail[1] == '\n' && tail[2] == '0' && tail[3] == '\r' &&
+           tail[4] == '\n' && tail[5] == '\r' && tail[6] == '\n';
+}
 
 // empty_http_info zeroes and return the unique percpu copy in the map
 // this function assumes that a given thread is not trying to use many
@@ -766,6 +821,18 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
     } else if ((args->packet_type == PACKET_TYPE_RESPONSE) && (info->status == 0)) {
         handle_http_response(
             args->small_buf, &args->pid_conn, info, args->bytes_len, args->lw_thread);
+        // Detect a chunked response on its first packet, and (for tiny responses
+        // that complete in one read) whether this read already carries the
+        // last-chunk terminator. The in-band finish happens once the emit chain
+        // for this read completes (see obi_large_buf_emit_continue), preserving
+        // the chunks-before-span ordering on the shared ring buffer.
+        if (args->bytes_len > 0 &&
+            http_response_head_is_chunked((void *)args->u_buf, (u32)args->bytes_len)) {
+            info->chunked |= k_http_chunked_detected;
+            if (http_read_tail_is_chunk_end((void *)args->u_buf, (u32)args->bytes_len)) {
+                info->chunked |= k_http_chunked_last_seen;
+            }
+        }
         http_send_large_buffer(ctx,
                                info,
                                &args->pid_conn,
@@ -788,6 +855,13 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
     } else if (still_responding(info)) {
         info->end_monotime_ns = bpf_ktime_get_ns();
         info->resp_len += args->bytes_len;
+        // For a chunked response, mark the read that ends with the last-chunk
+        // terminator so the emit continuation can finish in-band once this
+        // read's chunk events have been emitted.
+        if ((info->chunked & k_http_chunked_detected) && args->bytes_len > 0 &&
+            http_read_tail_is_chunk_end((void *)args->u_buf, (u32)args->bytes_len)) {
+            info->chunked |= k_http_chunked_last_seen;
+        }
         http_send_large_buffer(ctx,
                                info,
                                &args->pid_conn,
@@ -859,6 +933,17 @@ int obi_large_buf_emit_continue(struct pt_regs *ctx) {
     if (state->remaining_bytes > 0 && consumed_bytes > 0 &&
         state->batch_iter < k_large_buf_max_batches) {
         bpf_tail_call_static(ctx, &jump_table, k_tail_large_buf_emit_continue);
+    }
+
+    // In-band finish for chunked (e.g. SSE streaming) responses. Once the final
+    // read's chunk events have all been emitted on the shared `events` ring
+    // buffer, finishing here guarantees the trailing usage/finish_reason chunks
+    // are drained before the span event, instead of racing an out-of-band
+    // send/close finish that would drop them. Only on clean completion
+    // (remaining_bytes == 0), never on batch-limit truncation.
+    if (state->remaining_bytes == 0 && state->packet_type == PACKET_TYPE_RESPONSE &&
+        (info->chunked & k_http_chunked_last_seen) && !info->submitted) {
+        finish_http(info, &state->pid_conn);
     }
 
     return 0;
