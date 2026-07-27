@@ -129,7 +129,8 @@ func (tr *tracesOTELReceiver) processSpans(ctx context.Context, exp exporter.Tra
 				envResourceAttrs = append(envResourceAttrs, attribute.Bool(string(attr.SkipSpanMetrics.OTEL()), true))
 			}
 			for i := range spanGroup {
-				if request.IsGenAISubtype(spanGroup[i].Span.SubType) {
+				if request.IsGenAISubtype(spanGroup[i].Span.SubType) ||
+					spanGroup[i].Span.OpenAICompatibleGatewayHost {
 					envResourceAttrs = append(envResourceAttrs, attribute.String("acs.arms.service.feature", "genai_app"))
 					break
 				}
