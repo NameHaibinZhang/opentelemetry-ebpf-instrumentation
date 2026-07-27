@@ -51,19 +51,85 @@ enum {
 
 // Window scanned at the first response packet when detecting chunked encoding.
 #define k_http_chunked_scan_window 256
+// Number of positions the token can start at within the window (the trailing 6
+// bytes cannot begin a full 7-byte "chunked" match).
+#define k_http_chunked_scan_loops (k_http_chunked_scan_window - 7 + 1)
+
+// Percpu scratch holding the response-head window copied from userspace. The
+// bpf_loop scan below runs over this map memory (whose bounds the verifier
+// tracks) rather than the stack, which a bpf_loop callback cannot index.
+SCRATCH_MEM_SIZED(http_chunked_head, k_http_chunked_scan_window);
 
 // http_chunked_token compares the 7 bytes at p to "chunked", case-insensitively.
+// The (c | 0x20) ASCII case fold is branchless (only 'C'/'c' etc. map onto the
+// target lowercase letters), keeping the per-position verifier cost low.
 static __always_inline bool http_chunked_token(const unsigned char *p) {
-    return lowercase(p[0]) == 'c' && lowercase(p[1]) == 'h' && lowercase(p[2]) == 'u' &&
-           lowercase(p[3]) == 'n' && lowercase(p[4]) == 'k' && lowercase(p[5]) == 'e' &&
-           lowercase(p[6]) == 'd';
+    return (p[0] | 0x20) == 'c' && (p[1] | 0x20) == 'h' && (p[2] | 0x20) == 'u' &&
+           (p[3] | 0x20) == 'n' && (p[4] | 0x20) == 'k' && (p[5] | 0x20) == 'e' &&
+           (p[6] | 0x20) == 'd';
+}
+
+// chunked_scan_ctx carries the head window and the match result through the
+// bpf_loop callback below.
+struct chunked_scan_ctx {
+    const unsigned char *buf; // points to the http_chunked_head scratch window
+    u32 n;                    // valid bytes copied into the window
+    bool found;
+    u8 _pad[3];
+};
+
+// chunked_match is the bpf_loop callback checking for the "chunked" token at
+// position index. Returning 1 stops the loop (match found or window exhausted).
+static int chunked_match(u32 index, void *data) {
+    struct chunked_scan_ctx *ctx = data;
+    // Keep the 7-byte window inside the fixed scratch buffer (verifier bound).
+    if (index > k_http_chunked_scan_window - 7) {
+        return 1;
+    }
+    // Don't read past the bytes actually captured (correctness bound).
+    if (index + 7 > ctx->n) {
+        return 1;
+    }
+    if (http_chunked_token(&ctx->buf[index])) {
+        ctx->found = true;
+        return 1;
+    }
+    return 0;
 }
 
 // http_response_head_is_chunked scans the beginning of a response read for a
 // "chunked" Transfer-Encoding token. This is only a scoping gate: a false
 // positive merely arms the position-anchored terminator check below, which
 // cannot itself misfire on non-chunked payloads.
+//
+// The scan uses bpf_loop (kernel >= 5.17) so the verifier walks the match
+// callback once, keeping verification cheap regardless of the window size. The
+// __legacy variant below is the unrolled fallback for older kernels, mirroring
+// the traceparent scanner's bpf_loop/legacy split.
 static __always_inline bool http_response_head_is_chunked(const void *u_buf, u32 len) {
+    u32 n = len;
+    bpf_clamp_umax(n, k_http_chunked_scan_window);
+    if (n < 7) {
+        return false;
+    }
+
+    unsigned char *head = (unsigned char *)http_chunked_head_mem();
+    if (!head) {
+        return false;
+    }
+    bpf_probe_read(head, k_http_chunked_scan_window, (void *)u_buf);
+
+    u32 nr_loops = n - 7 + 1;
+    bpf_clamp_umax(nr_loops, k_http_chunked_scan_loops);
+
+    struct chunked_scan_ctx ctx = {.buf = head, .n = n, .found = false};
+    bpf_loop(nr_loops, chunked_match, &ctx, 0);
+    return ctx.found;
+}
+
+// http_response_head_is_chunked__legacy is the pre-5.17 fallback: an unrolled
+// scan bounded by the fixed window to stay within the verifier's limits.
+static __always_inline bool http_response_head_is_chunked__legacy(const void *u_buf, u32 len) {
     unsigned char head[k_http_chunked_scan_window];
     u32 n = len;
     bpf_clamp_umax(n, k_http_chunked_scan_window);
@@ -80,6 +146,18 @@ static __always_inline bool http_response_head_is_chunked(const void *u_buf, u32
         }
     }
     return false;
+}
+
+// http_response_head_is_chunked_sel dispatches to the bpf_loop or unrolled scan.
+// use_bpf_loop is a compile-time constant per program specialization (see
+// obi_protocol_http vs obi_protocol_http_legacy), so the unused variant is
+// dead-code eliminated and never reaches the verifier.
+static __always_inline bool
+http_response_head_is_chunked_sel(const void *u_buf, u32 len, bool use_bpf_loop) {
+    if (use_bpf_loop) {
+        return http_response_head_is_chunked(u_buf, len);
+    }
+    return http_response_head_is_chunked__legacy(u_buf, len);
 }
 
 // http_read_tail_is_chunk_end reports whether the last 7 bytes of a response
@@ -810,11 +888,15 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
                    pid_from_pid_tgid(bpf_get_current_pid_tgid()),
                    still_reading(info));
 
+    // bpf_loop is available on the same kernels that select the bpf_loop-based
+    // traceparent scanner; use it to keep the chunked head scan cheap to verify.
+    const bool use_bpf_loop = tp_loop_fn == bpf_strstr_tp_loop;
+
     info->direction = args->direction;
     if (args->packet_type == PACKET_TYPE_REQUEST && (info->status == 0) &&
         (info->start_monotime_ns == 0)) {
 
-        args->use_bpf_loop = tp_loop_fn == bpf_strstr_tp_loop;
+        args->use_bpf_loop = use_bpf_loop;
         bpf_tail_call(ctx, &jump_table, k_tail_continue_protocol_http);
 
         return 0;
@@ -826,10 +908,11 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
         // last-chunk terminator. The in-band finish happens once the emit chain
         // for this read completes (see obi_large_buf_emit_continue), preserving
         // the chunks-before-span ordering on the shared ring buffer.
+        const u32 rlen = (u32)args->bytes_len;
         if (args->bytes_len > 0 &&
-            http_response_head_is_chunked((void *)args->u_buf, (u32)args->bytes_len)) {
+            http_response_head_is_chunked_sel((void *)args->u_buf, rlen, use_bpf_loop)) {
             info->chunked |= k_http_chunked_detected;
-            if (http_read_tail_is_chunk_end((void *)args->u_buf, (u32)args->bytes_len)) {
+            if (http_read_tail_is_chunk_end((void *)args->u_buf, rlen)) {
                 info->chunked |= k_http_chunked_last_seen;
             }
         }
