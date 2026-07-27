@@ -90,6 +90,15 @@ func appendTCPLargeBuffer(parseCtx *EBPFParseContext, record *ringbuf.Record) (r
 		parseCtx.refreshPendingGoHTTPClientRequest(event.ConnInfo, event.Tp.TraceId)
 	}
 
+	// A response chunk just landed; if an HTTP client response span was parked
+	// waiting for its (racing) trailing chunks and the body now looks complete,
+	// build and emit it now. See pending_http_response.go.
+	if event.PacketType == packetTypeResponse {
+		if span, ok := parseCtx.tryCompletePendingHTTPResponse(event.Tp.TraceId, event.ConnInfo); ok {
+			return span, false, nil
+		}
+	}
+
 	return request.Span{}, true, nil
 }
 

@@ -35,5 +35,10 @@ typedef struct http_info {
     u8 direction;
     u8 submitted;
     enum event_source_type event_source;
-    u8 _pad[2];
+    // chunked: in-band finish flags for chunked (e.g. SSE streaming) responses.
+    // bit0 = Transfer-Encoding: chunked detected on the response head.
+    // bit1 = the chunked last-chunk terminator was observed at a read tail.
+    // Reuses one of the former padding bytes, so the struct size is unchanged.
+    u8 chunked;
+    u8 _pad[1];
 } http_info_t;
