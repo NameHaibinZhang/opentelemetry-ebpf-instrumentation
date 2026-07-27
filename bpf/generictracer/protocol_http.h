@@ -911,6 +911,13 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
     const bool use_bpf_loop = tp_loop_fn == bpf_strstr_tp_loop;
 
     info->direction = args->direction;
+    // DIAG: per response-ish read, show which branch it will take.
+    if (args->packet_type == PACKET_TYPE_RESPONSE || (info->chunked & k_http_chunked_detected)) {
+        bpf_dbg_printk("obi_chunked disp pt=%d status=%d chunked=%d",
+                       args->packet_type,
+                       info->status,
+                       info->chunked);
+    }
     if (args->packet_type == PACKET_TYPE_REQUEST && (info->status == 0) &&
         (info->start_monotime_ns == 0)) {
 
@@ -926,15 +933,24 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
         // last-chunk terminator. The in-band finish happens once the emit chain
         // for this read completes (see obi_large_buf_emit_continue), preserving
         // the chunks-before-span ordering on the shared ring buffer.
+        // For delayed SSL responses info->status stays 0 (the SSE data reads do
+        // not parse as a status line), so every response read re-enters this
+        // branch rather than still_responding(). Detect the chunked header once
+        // (only the header read carries the "chunked" token) and then check the
+        // last-chunk terminator on EVERY read using the persisted detected flag,
+        // since the terminator rides on a later data read that has no header.
         const u32 rlen = (u32)args->bytes_len;
         if (args->bytes_len > 0 &&
             http_response_head_is_chunked_sel((void *)args->u_buf, rlen, use_bpf_loop)) {
             info->chunked |= k_http_chunked_detected;
-            if (http_read_tail_is_chunk_end((void *)args->u_buf, rlen)) {
-                info->chunked |= k_http_chunked_last_seen;
-            }
-            // DIAG: one line per chunked response first packet.
-            bpf_dbg_printk("obi_chunked first rlen=%d last_seen=%d",
+        }
+        if ((info->chunked & k_http_chunked_detected) && args->bytes_len > 0 &&
+            http_read_tail_is_chunk_end((void *)args->u_buf, rlen)) {
+            info->chunked |= k_http_chunked_last_seen;
+        }
+        // DIAG: one line per response read of a chunked stream.
+        if (info->chunked & k_http_chunked_detected) {
+            bpf_dbg_printk("obi_chunked resp rlen=%d last_seen=%d",
                            rlen,
                            (info->chunked & k_http_chunked_last_seen) != 0);
         }
@@ -947,8 +963,21 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
                                args->direction,
                                k_large_buf_action_init);
     } else if (still_reading(info)) {
-        // print here
         info->len += args->bytes_len;
+        // A chunked (delayed SSL) response whose status never parsed keeps
+        // status==0, so its continuation reads land here rather than in
+        // still_responding(). Check the last-chunk terminator on the persisted
+        // detected flag so the emit continuation can finish in-band.
+        if ((info->chunked & k_http_chunked_detected) &&
+            args->packet_type == PACKET_TYPE_RESPONSE) {
+            const bool tail_end =
+                args->bytes_len > 0 &&
+                http_read_tail_is_chunk_end((void *)args->u_buf, (u32)args->bytes_len);
+            if (tail_end) {
+                info->chunked |= k_http_chunked_last_seen;
+            }
+            bpf_dbg_printk("obi_chunked SR len=%d tail_end=%d", args->bytes_len, tail_end);
+        }
         http_send_large_buffer(ctx,
                                info,
                                &args->pid_conn,
