@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -76,11 +77,26 @@ func getResponseBody(resp *http.Response) ([]byte, error) {
 	if enc := resp.Header.Get("Content-Encoding"); enc != "" && len(respB) > 0 {
 		dec, err := decompressBody(enc, respB)
 		if err != nil && len(dec) == 0 {
+			slog.Info("OBI_DIAG body", "enc", enc, "rawLen", len(respB),
+				"outLen", 0, "decFail", true, "outHasUsage", false)
 			return nil, fmt.Errorf("decompress error (enc=%s, truncated body?): %w", enc, err)
 		}
 		body = dec
 		decErr = err
 	}
+
+	// OBI_DIAG: decode outcome for a response body handed to a gen_ai detector.
+	// enc="" means no Content-Encoding header was captured (decompression skipped);
+	// outHasUsage tells whether the (decoded) body actually contains the usage
+	// object the parser looks for.
+	slog.Info("OBI_DIAG body",
+		"enc", resp.Header.Get("Content-Encoding"),
+		"rawLen", len(respB),
+		"outLen", len(body),
+		"decErr", decErr != nil,
+		"outHasUsage", bytes.Contains(body, []byte("usage")),
+		"outHasDONE", bytes.Contains(body, []byte("[DONE]")),
+		"outTail", diagTailStr(body, 180))
 
 	if decErr != nil {
 		return body, decErr
