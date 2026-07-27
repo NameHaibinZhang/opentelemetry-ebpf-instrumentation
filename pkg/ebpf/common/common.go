@@ -275,7 +275,11 @@ type EBPFParseContext struct {
 	pendingGoHTTPClientRequests *expirable.LRU[BpfConnectionInfoT, *pendingGoHTTPClientRequest]
 	goHTTPClientMaxPendingTime  time.Duration
 	discardPendingGoHTTPClients atomic.Bool
-	emitSpans                   func([]request.Span)
+	// pendingHTTPResponses parks kprobe/SSL HTTP client response spans whose body
+	// has not been fully captured yet, so the streaming SSE tail is not dropped by
+	// the span-before-chunks ring-buffer race. See pending_http_response.go.
+	pendingHTTPResponses *expirable.LRU[pendingHTTPRespKey, *pendingHTTPResp]
+	emitSpans            func([]request.Span)
 }
 
 // sharedForwarder is implemented by ringBufForwarder[T] so that
@@ -460,6 +464,11 @@ func NewEBPFParseContext(cfg *config.EBPFTracer, spansChan *msg.Queue[[]request.
 		)
 	}
 
+	// Deferred completion for kprobe/SSL HTTP client responses (streaming tail).
+	if payloadExtraction.Enabled() && emitSpans != nil {
+		parseCtx.pendingHTTPResponses = newPendingHTTPResponses(parseCtx)
+	}
+
 	return parseCtx
 }
 
@@ -472,6 +481,9 @@ func (ctx *EBPFParseContext) Close() {
 	ctx.discardPendingGoHTTPClients.Store(true)
 	if ctx.pendingGoHTTPClientRequests != nil {
 		ctx.pendingGoHTTPClientRequests.Purge()
+	}
+	if ctx.pendingHTTPResponses != nil {
+		ctx.pendingHTTPResponses.Purge()
 	}
 }
 

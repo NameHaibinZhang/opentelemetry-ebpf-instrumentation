@@ -309,7 +309,18 @@ func ReadHTTPInfoIntoSpan(parseCtx *EBPFParseContext, record *ringbuf.Record, fi
 	return HTTPInfoEventToSpan(parseCtx, event)
 }
 
+// HTTPInfoEventToSpan builds a span from an HTTP event, deferring client
+// responses whose body has not been fully captured yet so the streaming SSE tail
+// (finish_reason / usage) is not dropped by the span-before-chunks ring-buffer
+// race. See pending_http_response.go.
 func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (request.Span, bool, error) {
+	if parseCtx.maybeDeferHTTPResponse(event) {
+		return request.Span{}, true, nil
+	}
+	return buildHTTPInfoSpan(parseCtx, event)
+}
+
+func buildHTTPInfoSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (request.Span, bool, error) {
 	var (
 		requestBuffer, responseBuffer *largebuf.LargeBuffer
 		hasResponse                   bool
