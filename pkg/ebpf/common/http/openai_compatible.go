@@ -4,6 +4,8 @@
 package ebpfcommon // import "go.opentelemetry.io/obi/pkg/ebpf/common/http"
 
 import (
+	"bytes"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -12,6 +14,14 @@ import (
 	"go.opentelemetry.io/obi/pkg/appolly/app/request"
 	"go.opentelemetry.io/obi/pkg/config"
 )
+
+// diagTailStr returns the last n bytes of b as a string, for OBI_DIAG logging.
+func diagTailStr(b []byte, n int) string {
+	if len(b) > n {
+		b = b[len(b)-n:]
+	}
+	return string(b)
+}
 
 func OpenAICompatibleSpan(baseSpan *request.Span, req *http.Request, resp *http.Response, gateways []config.OpenAICompatibleGateway) (request.Span, bool) {
 	var reqHost string
@@ -60,6 +70,22 @@ func OpenAICompatibleSpan(baseSpan *request.Span, req *http.Request, resp *http.
 
 	parsedRequest := parseOpenAIInput(reqB)
 	parsedResponse, toolCalls := parseOpenAICompatibleResponse(respB)
+
+	// OBI_DIAG: what the parser received (the de-chunked response body) and what
+	// it extracted. Compare against the raw-capture OBI_DIAG in HTTPInfoEventToSpan
+	// to localize the usage=0 cause: capture-missing vs de-chunk-lost vs parse-fail.
+	{
+		inTok, inOK := parsedResponse.Usage.InputTokenCount()
+		outTok, outOK := parsedResponse.Usage.OutputTokenCount()
+		slog.Info("OBI_DIAG openai_compat",
+			"host", hostOnly,
+			"respLen", len(respB),
+			"bodyHasUsage", bytes.Contains(respB, []byte("usage")),
+			"bodyHasDONE", bytes.Contains(respB, []byte("[DONE]")),
+			"bodyHasPromptTok", bytes.Contains(respB, []byte("prompt_tokens")),
+			"inTok", inTok, "inOK", inOK, "outTok", outTok, "outOK", outOK,
+			"respTail", diagTailStr(respB, 220))
+	}
 
 	if parsedResponse.ResponseModel == "" && len(parsedResponse.Choices) == 0 &&
 		!hasOpenAIUsage(parsedResponse.Usage) && len(parsedResponse.Data) == 0 &&
