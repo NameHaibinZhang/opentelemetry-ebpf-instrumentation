@@ -1081,25 +1081,32 @@ int obi_large_buf_emit_continue(struct pt_regs *ctx) {
     // are drained before the span event, instead of racing an out-of-band
     // send/close finish that would drop them. Only on clean completion
     // (remaining_bytes == 0), never on batch-limit truncation.
-    if (state->packet_type == PACKET_TYPE_RESPONSE && (info->chunked & k_http_chunked_detected)) {
-        // DIAG: emit-chain state for a chunked response; last_seen must be 1 and
-        // remaining must be 0 for the in-band finish below to fire.
-        bpf_dbg_printk("obi_chunked emit remaining=%d last_seen=%d sub=%d",
-                       state->remaining_bytes,
-                       (info->chunked & k_http_chunked_last_seen) != 0,
-                       info->submitted);
-        // DIAG: raw last 5 bytes emitted for this read (state->u_buf now points
-        // just past the emitted region). The chunked terminator "0\r\n\r\n" shows
-        // as first three bytes 30 0d 0a. Reveals whether OBI even captures the
-        // last chunk and, if so, where the terminator lands.
+    // Detect the chunked last-chunk terminator "0\r\n\r\n" on the emitted read
+    // tail. The SSE data reads that carry the terminator flow only through this
+    // emit path (not through the __obi_protocol_http response branches), so this
+    // is the only place the terminator can be observed. state->u_buf now points
+    // just past the region emitted for this read, so its last 5 bytes are at
+    // state->u_buf - 5. Only meaningful once the read is fully emitted
+    // (remaining_bytes == 0).
+    if (state->packet_type == PACKET_TYPE_RESPONSE && (info->chunked & k_http_chunked_detected) &&
+        state->remaining_bytes == 0 && !(info->chunked & k_http_chunked_last_seen)) {
         unsigned char te[5] = {0};
-        if (bpf_probe_read(te, sizeof(te), (void *)(state->u_buf - 5)) == 0) {
-            bpf_dbg_printk("obi_chunked tail %x %x %x", te[0], te[1], te[2]);
-            bpf_dbg_printk("obi_chunked tail2 %x %x", te[3], te[4]);
+        if (bpf_probe_read(te, sizeof(te), (void *)(state->u_buf - 5)) == 0 && te[0] == '0' &&
+            te[1] == '\r' && te[2] == '\n' && te[3] == '\r' && te[4] == '\n') {
+            info->chunked |= k_http_chunked_last_seen;
+            bpf_dbg_printk("obi_chunked term seen status=%d", info->status);
         }
     }
+
+    // In-band finish for chunked (e.g. SSE streaming) responses. Once the final
+    // read's chunk events have all been emitted on the shared `events` ring
+    // buffer, finishing here guarantees the trailing usage/finish_reason chunks
+    // are drained before the span event, instead of racing an out-of-band
+    // send/close finish that would drop them. Only on clean completion
+    // (remaining_bytes == 0), never on batch-limit truncation.
     if (state->remaining_bytes == 0 && state->packet_type == PACKET_TYPE_RESPONSE &&
         (info->chunked & k_http_chunked_last_seen) && !info->submitted) {
+        bpf_dbg_printk("obi_chunked FINISH inband status=%d sub=%d", info->status, info->submitted);
         finish_http(info, &state->pid_conn);
     }
 
