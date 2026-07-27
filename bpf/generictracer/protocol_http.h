@@ -327,6 +327,13 @@ static __always_inline http_info_t *get_or_set_http_info(http_info_t *info,
                     return 0;
                 }
             }
+            // DIAG: a new request is displacing an as-yet-unterminated chunked
+            // response; finishing it here builds an incomplete span (residual
+            // race after suppressing finish_possible_delayed).
+            if ((old_info->chunked & k_http_chunked_detected) &&
+                !(old_info->chunked & k_http_chunked_last_seen)) {
+                bpf_dbg_printk("obi_chunked NEXTREQ incomplete status=%d", old_info->status);
+            }
             // this will delete ongoing_http for this connection info if there's full stale request
             finish_http(old_info, pid_conn);
         }
@@ -356,6 +363,18 @@ static __always_inline void finish_possible_delayed_http_request(pid_connection_
     }
     http_info_t *info = bpf_map_lookup_elem(&ongoing_http, pid_conn);
     if (info && info->delayed) {
+        // For a chunked (SSE streaming) response, this opposite-direction
+        // trigger (e.g. the next request being written on a keep-alive
+        // connection) can fire before the terminating read has been processed,
+        // building the span from an incomplete buffer and dropping the tail
+        // (finish_reason/usage). Defer: the terminator drives the in-band finish,
+        // and the actual next request (get_or_set_http_info) plus connection
+        // close/LRU remain as fallbacks, so nothing leaks.
+        if ((info->chunked & k_http_chunked_detected) &&
+            !(info->chunked & k_http_chunked_last_seen)) {
+            bpf_dbg_printk("obi_chunked OOBskip status=%d", info->status);
+            return;
+        }
         finish_http(info, pid_conn);
     }
 }
