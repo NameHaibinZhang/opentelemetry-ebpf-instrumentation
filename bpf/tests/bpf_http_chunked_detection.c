@@ -158,13 +158,13 @@ static __always_inline bool http_response_head_is_chunked__legacy(const void *u_
 }
 
 static __always_inline bool http_read_tail_is_chunk_end(const void *u_buf, u32 len) {
-    if (len < 7) {
+    if (len < 5) {
         return false;
     }
-    unsigned char tail[7];
-    bpf_probe_read(tail, sizeof(tail), (void *)((const u8 *)u_buf + (len - 7)));
-    return tail[0] == '\r' && tail[1] == '\n' && tail[2] == '0' && tail[3] == '\r' &&
-           tail[4] == '\n' && tail[5] == '\r' && tail[6] == '\n';
+    unsigned char tail[5];
+    bpf_probe_read(tail, sizeof(tail), (void *)((const u8 *)u_buf + (len - 5)));
+    return tail[0] == '0' && tail[1] == '\r' && tail[2] == '\n' && tail[3] == '\r' &&
+           tail[4] == '\n';
 }
 
 // ---------------------------------------------------------------------------
@@ -267,13 +267,23 @@ static void test_tail_exact_terminator(void) {
     check_bool("tail: exact last-chunk terminator", true, tail_is_end(b, (u32)strlen(b)));
 }
 
-static void test_tail_minimal_terminator(void) {
+static void test_tail_full_7byte_terminator(void) {
+    // The full "\r\n0\r\n\r\n" (terminator riding along with the previous chunk's
+    // closing CRLF in the same read) still matches on its "0\r\n\r\n" tail.
     const char b[] = {'\r', '\n', '0', '\r', '\n', '\r', '\n'};
-    check_bool("tail: minimal 7-byte terminator", true, tail_is_end(b, sizeof(b)));
+    check_bool("tail: full 7-byte terminator", true, tail_is_end(b, sizeof(b)));
+}
+
+static void test_tail_standalone_terminator(void) {
+    // Fix A: the terminator flushed in its own SSL_read ("0\r\n\r\n", 5 bytes)
+    // must now be recognised, instead of bailing on len < 7.
+    const char b[] = {'0', '\r', '\n', '\r', '\n'};
+    check_bool("tail: standalone 5-byte terminator", true, tail_is_end(b, sizeof(b)));
 }
 
 static void test_tail_too_short(void) {
-    const char b[] = {'0', '\r', '\n', '\r', '\n'};
+    // Below the 5-byte terminator length: cannot match.
+    const char b[] = {'\r', '\n', '\r', '\n'};
     check_bool("tail: shorter than terminator", false, tail_is_end(b, sizeof(b)));
 }
 
@@ -353,7 +363,8 @@ int main(void) {
     test_head_token_beyond_window();
 
     test_tail_exact_terminator();
-    test_tail_minimal_terminator();
+    test_tail_full_7byte_terminator();
+    test_tail_standalone_terminator();
     test_tail_too_short();
     test_tail_terminator_midbody_not_at_end();
     test_tail_content_ending_crlf_only();

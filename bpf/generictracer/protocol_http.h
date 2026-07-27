@@ -168,18 +168,28 @@ http_response_head_is_chunked_sel(const void *u_buf, u32 len, bool use_bpf_loop)
     return http_response_head_is_chunked__legacy(u_buf, len);
 }
 
-// http_read_tail_is_chunk_end reports whether the last 7 bytes of a response
-// read are the chunked last-chunk terminator "\r\n0\r\n\r\n" (the preceding
-// chunk's closing CRLF, the zero-size last chunk, and the terminating CRLF).
-// Anchored at the read tail, so bytes appearing mid-body cannot match.
+// http_read_tail_is_chunk_end reports whether a response read ends with the
+// chunked last-chunk terminator "0\r\n\r\n" (the zero-size chunk-size line plus
+// the terminating CRLF). Anchored at the read tail, so bytes appearing mid-body
+// cannot match.
+//
+// Matching the 5-byte "0\r\n\r\n" rather than the 7-byte "\r\n0\r\n\r\n" (which
+// also required the previous chunk's closing CRLF in the same read) additionally
+// catches the common case where the server flushes the terminator in its own
+// SSL_read, separate from the preceding data chunk. In that split, the final
+// read is just "0\r\n\r\n" (5 bytes): the old 7-byte check bailed on len < 7 and
+// the request fell back to the racy out-of-band finish, occasionally dropping the
+// streaming tail (usage / finish_reason). "0\r\n\r\n" is structurally unique to
+// the last chunk (a data chunk closes with a single CRLF), so single-line JSON
+// SSE bodies cannot produce it mid-stream.
 static __always_inline bool http_read_tail_is_chunk_end(const void *u_buf, u32 len) {
-    if (len < 7) {
+    if (len < 5) {
         return false;
     }
-    unsigned char tail[7];
-    bpf_probe_read(tail, sizeof(tail), (void *)((const u8 *)u_buf + (len - 7)));
-    return tail[0] == '\r' && tail[1] == '\n' && tail[2] == '0' && tail[3] == '\r' &&
-           tail[4] == '\n' && tail[5] == '\r' && tail[6] == '\n';
+    unsigned char tail[5];
+    bpf_probe_read(tail, sizeof(tail), (void *)((const u8 *)u_buf + (len - 5)));
+    return tail[0] == '0' && tail[1] == '\r' && tail[2] == '\n' && tail[3] == '\r' &&
+           tail[4] == '\n';
 }
 
 // empty_http_info zeroes and return the unique percpu copy in the map
