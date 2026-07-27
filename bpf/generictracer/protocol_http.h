@@ -933,6 +933,10 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
             if (http_read_tail_is_chunk_end((void *)args->u_buf, rlen)) {
                 info->chunked |= k_http_chunked_last_seen;
             }
+            // DIAG: one line per chunked response first packet.
+            bpf_dbg_printk("obi_chunked first rlen=%d last_seen=%d",
+                           rlen,
+                           (info->chunked & k_http_chunked_last_seen) != 0);
         }
         http_send_large_buffer(ctx,
                                info,
@@ -959,9 +963,15 @@ __obi_protocol_http(struct pt_regs *ctx, unsigned char *(*tp_loop_fn)(unsigned c
         // For a chunked response, mark the read that ends with the last-chunk
         // terminator so the emit continuation can finish in-band once this
         // read's chunk events have been emitted.
-        if ((info->chunked & k_http_chunked_detected) && args->bytes_len > 0 &&
-            http_read_tail_is_chunk_end((void *)args->u_buf, (u32)args->bytes_len)) {
-            info->chunked |= k_http_chunked_last_seen;
+        if (info->chunked & k_http_chunked_detected) {
+            const bool tail_end =
+                args->bytes_len > 0 &&
+                http_read_tail_is_chunk_end((void *)args->u_buf, (u32)args->bytes_len);
+            if (tail_end) {
+                info->chunked |= k_http_chunked_last_seen;
+            }
+            // DIAG: one line per chunked response continuation read.
+            bpf_dbg_printk("obi_chunked cont len=%d tail_end=%d", args->bytes_len, tail_end);
         }
         http_send_large_buffer(ctx,
                                info,
@@ -1042,6 +1052,14 @@ int obi_large_buf_emit_continue(struct pt_regs *ctx) {
     // are drained before the span event, instead of racing an out-of-band
     // send/close finish that would drop them. Only on clean completion
     // (remaining_bytes == 0), never on batch-limit truncation.
+    if (state->packet_type == PACKET_TYPE_RESPONSE && (info->chunked & k_http_chunked_detected)) {
+        // DIAG: emit-chain state for a chunked response; last_seen must be 1 and
+        // remaining must be 0 for the in-band finish below to fire.
+        bpf_dbg_printk("obi_chunked emit remaining=%d last_seen=%d sub=%d",
+                       state->remaining_bytes,
+                       (info->chunked & k_http_chunked_last_seen) != 0,
+                       info->submitted);
+    }
     if (state->remaining_bytes == 0 && state->packet_type == PACKET_TYPE_RESPONSE &&
         (info->chunked & k_http_chunked_last_seen) && !info->submitted) {
         finish_http(info, &state->pid_conn);
