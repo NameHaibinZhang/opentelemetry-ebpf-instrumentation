@@ -363,16 +363,24 @@ static __always_inline void finish_possible_delayed_http_request(pid_connection_
     }
     http_info_t *info = bpf_map_lookup_elem(&ongoing_http, pid_conn);
     if (info && info->delayed) {
-        // For a chunked (SSE streaming) response, this opposite-direction
-        // trigger (e.g. the next request being written on a keep-alive
-        // connection) can fire before the terminating read has been processed,
-        // building the span from an incomplete buffer and dropping the tail
-        // (finish_reason/usage). Defer: the terminator drives the in-band finish,
-        // and the actual next request (get_or_set_http_info) plus connection
-        // close/LRU remain as fallbacks, so nothing leaks.
-        if ((info->chunked & k_http_chunked_detected) &&
-            !(info->chunked & k_http_chunked_last_seen)) {
-            bpf_dbg_printk("obi_chunked OOBskip status=%d", info->status);
+        // A delayed (SSL) response can still be receiving its body. This
+        // opposite-direction trigger — typically the next keep-alive request
+        // being written on the same connection — must NOT finish it early:
+        // finish_http here emits the span AND deletes ongoing_http, so the tail
+        // reads still arriving (finish_reason/usage/[DONE]/terminator) then hit
+        // "No info" and are dropped, producing usage=0 / empty finish_reason.
+        //
+        // Skip until the chunked last-chunk terminator has been observed
+        // (last_seen drives the in-band finish). We intentionally do NOT gate on
+        // k_http_chunked_detected: header detection can miss (e.g. the "chunked"
+        // token falls outside the first read's 256-byte scan window), and those
+        // are exactly the streams that were losing their tail. The real next
+        // request (get_or_set_http_info), connection close (force_finish) and the
+        // userspace/LRU fallbacks still finalize the request, so nothing leaks —
+        // this only defers an early finish, never drops one.
+        if (!(info->chunked & k_http_chunked_last_seen)) {
+            bpf_dbg_printk(
+                "obi_oob_skip delayed finish status=%d chunked=%d", info->status, info->chunked);
             return;
         }
         finish_http(info, pid_conn);
