@@ -1088,6 +1088,15 @@ int obi_large_buf_emit_continue(struct pt_regs *ctx) {
                        state->remaining_bytes,
                        (info->chunked & k_http_chunked_last_seen) != 0,
                        info->submitted);
+        // DIAG: raw last 5 bytes emitted for this read (state->u_buf now points
+        // just past the emitted region). The chunked terminator "0\r\n\r\n" shows
+        // as first three bytes 30 0d 0a. Reveals whether OBI even captures the
+        // last chunk and, if so, where the terminator lands.
+        unsigned char te[5] = {0};
+        if (bpf_probe_read(te, sizeof(te), (void *)(state->u_buf - 5)) == 0) {
+            bpf_dbg_printk("obi_chunked tail %x %x %x", te[0], te[1], te[2]);
+            bpf_dbg_printk("obi_chunked tail2 %x %x", te[3], te[4]);
+        }
     }
     if (state->remaining_bytes == 0 && state->packet_type == PACKET_TYPE_RESPONSE &&
         (info->chunked & k_http_chunked_last_seen) && !info->submitted) {
