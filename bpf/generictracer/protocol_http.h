@@ -69,11 +69,13 @@ static __always_inline bool http_chunked_token(const unsigned char *p) {
            (p[6] | 0x20) == 'd';
 }
 
-// chunked_scan_ctx carries the head window and the match result through the
-// bpf_loop callback below.
+// chunked_scan_ctx carries the captured length and the match result through the
+// bpf_loop callback below. The scratch buffer itself is re-looked-up inside the
+// callback rather than passed by pointer: a map-value pointer spilled through
+// the callback ctx loses its bounds in the verifier ("unbounded memory access"),
+// whereas a fresh lookup yields a pointer whose size the verifier tracks.
 struct chunked_scan_ctx {
-    const unsigned char *buf; // points to the http_chunked_head scratch window
-    u32 n;                    // valid bytes copied into the window
+    u32 n; // valid bytes copied into the window
     bool found;
     u8 _pad[3];
 };
@@ -82,15 +84,21 @@ struct chunked_scan_ctx {
 // position index. Returning 1 stops the loop (match found or window exhausted).
 static int chunked_match(u32 index, void *data) {
     struct chunked_scan_ctx *ctx = data;
-    // Keep the 7-byte window inside the fixed scratch buffer (verifier bound).
-    if (index > k_http_chunked_scan_window - 7) {
-        return 1;
-    }
     // Don't read past the bytes actually captured (correctness bound).
     if (index + 7 > ctx->n) {
         return 1;
     }
-    if (http_chunked_token(&ctx->buf[index])) {
+    unsigned char *buf = (unsigned char *)http_chunked_head_mem();
+    if (!buf) {
+        return 1;
+    }
+    // Mask to the (power-of-two) window and keep the 7-byte read in-bounds so
+    // the verifier can prove the access stays inside the scratch buffer.
+    index &= (k_http_chunked_scan_window - 1);
+    if (index > k_http_chunked_scan_window - 7) {
+        return 1;
+    }
+    if (http_chunked_token(&buf[index])) {
         ctx->found = true;
         return 1;
     }
@@ -122,7 +130,7 @@ static __always_inline bool http_response_head_is_chunked(const void *u_buf, u32
     u32 nr_loops = n - 7 + 1;
     bpf_clamp_umax(nr_loops, k_http_chunked_scan_loops);
 
-    struct chunked_scan_ctx ctx = {.buf = head, .n = n, .found = false};
+    struct chunked_scan_ctx ctx = {.n = n, .found = false};
     bpf_loop(nr_loops, chunked_match, &ctx, 0);
     return ctx.found;
 }
