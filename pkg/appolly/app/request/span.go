@@ -1346,6 +1346,11 @@ type Span struct {
 	GenAI             *GenAI         `json:"-"`
 	JSONRPC           *JSONRPC       `json:"-"`
 
+	// OpenAICompatibleGatewayHost indicates the client request's target host matched
+	// a configured openai_compatible.gateways entry, regardless of whether the response
+	// parsed as GenAI content. Used for ARMS resource tagging; not serialized.
+	OpenAICompatibleGatewayHost bool `json:"-"`
+
 	// RequestHeaders stores extracted HTTP request headers based on enrichment rules.
 	// Keys are canonical header names, values are all header values (possibly obfuscated).
 	RequestHeaders map[string][]string `json:"requestHeaders,omitempty"`
