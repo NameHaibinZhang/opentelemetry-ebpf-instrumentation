@@ -22,6 +22,8 @@ attributes:
     traces:
       include:
         - "gen_ai.*"
+        - "gen_ai.tool.call.arguments"
+        - "gen_ai.tool.call.result"
 
 routes:
   unmatched: low-cardinality
