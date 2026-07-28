@@ -143,6 +143,17 @@ DiscoveryConfig for the discover.ProcessFinder pipeline
 | `discovery.services` | [`RegexSelector`](#regexselector)[] |  |  |  | Yes | Selection. If the user defined the OTEL_EBPF_EXECUTABLE_PATH or OTEL_EBPF_OPEN_PORT variables, they will be automatically added to the services definition criteria, with the lowest preference.  Use Instrument instead |
 | `discovery.skip_go_specific_tracers` | `boolean` | `OTEL_EBPF_SKIP_GO_SPECIFIC_TRACERS` | `false` |  |  | This can be enabled to use generic HTTP tracers only, no Go-specifics will be used: |
 
+### `discovery.hot_reload`
+
+HotReloadConfig configures dynamic reloading of discovery instrument criteria from ConfigMaps
+
+| YAML Path | Type | Env Var | Default | Values | Deprecated | Description |
+|---|---|---|---|---|---|---|
+| `discovery.hot_reload.configmaps` | `string`[] | `OTEL_EBPF_DISCOVERY_HOT_RELOAD_CONFIGMAPS` | `arms-obi-discovery`, `arms-obi-discovery-default` |  |  |  |
+| `discovery.hot_reload.enabled` | `boolean` | `OTEL_EBPF_DISCOVERY_HOT_RELOAD` | `true` |  |  |  |
+| `discovery.hot_reload.namespace` | `string` | `OTEL_EBPF_DISCOVERY_HOT_RELOAD_NAMESPACE` | `obi-system` |  |  |  |
+| `discovery.hot_reload.poll_interval` | `duration` | `OTEL_EBPF_DISCOVERY_HOT_RELOAD_POLL_INTERVAL` | `15s` | `30s`, `5m`, `1ms`, etc |  |  |
+
 ### `discovery.route_harvester_advanced`
 
 | YAML Path | Type | Env Var | Default | Values | Deprecated | Description |
@@ -309,7 +320,7 @@ HTTPParsingPolicy defines the default action for http enrichment rules.
 | YAML Path | Type | Env Var | Default | Values | Deprecated | Description |
 |---|---|---|---|---|---|---|
 | `ebpf.payload_extraction.http.genai.openai_compatible.enabled` | `boolean` | `OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_ENABLED` | `false` |  |  | Enable OpenAI-compatible gateway payload extraction and parsing |
-| `ebpf.payload_extraction.http.genai.openai_compatible.gateways` | [`OpenAICompatibleGateway`](#openaicompatiblegateway)[] |  |  |  |  | Opt-in allowlist of gateway destinations to match by host (case-insensitive) with optional port and provider name |
+| `ebpf.payload_extraction.http.genai.openai_compatible.gateways` | [`OpenAICompatibleGateway`](#openaicompatiblegateway)[] | `OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_GATEWAYS` |  |  |  | Opt-in allowlist of gateway destinations to match by host (case-insensitive) with optional port and provider name. Via environment variable, provide the same list in YAML (or JSON) form, e.g. OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_GATEWAYS='[{host: litellm.example.com, provider: litellm}, {host: localhost, port: 8080, provider: vllm}]' |
 
 #### `ebpf.payload_extraction.http.genai.qwen`
 
