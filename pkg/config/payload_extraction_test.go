@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/obi/pkg/appolly/services"
 )
@@ -353,6 +354,67 @@ func TestPayloadExtraction_Enabled_OpenAICompatible(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.enabled, tt.pe.Enabled())
+		})
+	}
+}
+
+func TestOpenAICompatibleGateways_UnmarshalText(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    OpenAICompatibleGateways
+		wantErr bool
+	}{
+		{name: "empty", input: "", want: nil},
+		{name: "whitespace only", input: "   ", want: nil},
+		{
+			name:  "flow style single entry",
+			input: "[{host: litellm.example.com, provider: litellm}]",
+			want:  OpenAICompatibleGateways{{Host: "litellm.example.com", Provider: "litellm"}},
+		},
+		{
+			name:  "flow style multiple entries",
+			input: "[{host: litellm.example.com, provider: litellm}, {host: localhost, port: 8080, provider: vllm}, {host: ollama.local}]",
+			want: OpenAICompatibleGateways{
+				{Host: "litellm.example.com", Provider: "litellm"},
+				{Host: "localhost", Port: 8080, Provider: "vllm"},
+				{Host: "ollama.local"},
+			},
+		},
+		{
+			name:  "json style",
+			input: `[{"host":"litellm.example.com","provider":"litellm"},{"host":"localhost","port":8080,"provider":"vllm"}]`,
+			want: OpenAICompatibleGateways{
+				{Host: "litellm.example.com", Provider: "litellm"},
+				{Host: "localhost", Port: 8080, Provider: "vllm"},
+			},
+		},
+		{
+			name: "multi-line block style",
+			input: `
+- host: litellm.example.com
+  provider: litellm
+- host: localhost
+  port: 8080
+  provider: vllm
+`,
+			want: OpenAICompatibleGateways{
+				{Host: "litellm.example.com", Provider: "litellm"},
+				{Host: "localhost", Port: 8080, Provider: "vllm"},
+			},
+		},
+		{name: "invalid yaml", input: "[{host: litellm", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got OpenAICompatibleGateways
+			err := got.UnmarshalText([]byte(tt.input))
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
