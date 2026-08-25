@@ -53,6 +53,17 @@ groups:
           Git SHA of the OBI build. Carried as a resource attribute on
           every signal.
         examples: ["a2a9a6e2"]
+      - id: acs.arms.service.feature
+        type: string
+        stability: development
+        brief: >
+          Alibaba Cloud ARMS service-feature tag, carried as a resource
+          attribute on GenAI application signals so ARMS can classify the
+          service. OBI fork sets it to `genai_app`.
+        note: >
+          Fork-only extension for Alibaba Cloud ARMS; never part of upstream
+          semconv.
+        examples: ["genai_app"]
 
   # The instrument and (empty) unit declared here mirror what OBI currently
   # emits over OTLP rather than the OTel-canonical `gauge` / `unit: "1"`

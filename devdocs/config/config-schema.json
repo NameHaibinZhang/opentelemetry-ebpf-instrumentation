@@ -504,6 +504,10 @@
             "/usr/sbin/"
           ]
         },
+        "hot_reload": {
+          "$ref": "#/$defs/HotReloadConfig",
+          "description": "Enables watching ConfigMaps for dynamic discovery criteria updates"
+        },
         "instrument": {
           "$ref": "#/$defs/GlobDefinitionCriteria",
           "description": "Selects the services to instrument via Globs. If this section is set, both the Services and ExcludeServices section is ignored. If the user defined the OTEL_EBPF_INSTRUMENT_COMMAND or OTEL_EBPF_INSTRUMENT_PORTS variables, they will be automatically added to the instrument criteria, with the lowest preference."
@@ -1395,6 +1399,44 @@
         }
       },
       "type": "object"
+    },
+    "HotReloadConfig": {
+      "properties": {
+        "configmaps": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "default": [
+            "arms-obi-discovery",
+            "arms-obi-discovery-default"
+          ],
+          "x-env-var": "OTEL_EBPF_DISCOVERY_HOT_RELOAD_CONFIGMAPS"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "x-env-var": "OTEL_EBPF_DISCOVERY_HOT_RELOAD"
+        },
+        "namespace": {
+          "type": "string",
+          "default": "obi-system",
+          "x-env-var": "OTEL_EBPF_DISCOVERY_HOT_RELOAD_NAMESPACE"
+        },
+        "poll_interval": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m)$",
+          "default": "15s",
+          "examples": [
+            "30s",
+            "5m",
+            "1ms"
+          ],
+          "x-env-var": "OTEL_EBPF_DISCOVERY_HOT_RELOAD_POLL_INTERVAL"
+        }
+      },
+      "type": "object",
+      "description": "HotReloadConfig configures dynamic reloading of discovery instrument criteria from ConfigMaps"
     },
     "IPInfoConfig": {
       "properties": {
@@ -2304,11 +2346,9 @@
           "x-env-var": "OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_ENABLED"
         },
         "gateways": {
-          "items": {
-            "$ref": "#/$defs/OpenAICompatibleGateway"
-          },
-          "type": "array",
-          "description": "Opt-in allowlist of gateway destinations to match by host (case-insensitive) with optional port and provider name"
+          "$ref": "#/$defs/OpenAICompatibleGateways",
+          "description": "Opt-in allowlist of gateway destinations to match by host (case-insensitive) with optional port and provider name. Via environment variable, provide the same list in YAML (or JSON) form, e.g. OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_GATEWAYS='[{host: litellm.example.com, provider: litellm}, {host: localhost, port: 8080, provider: vllm}]'",
+          "x-env-var": "OTEL_EBPF_HTTP_OPENAI_COMPATIBLE_GATEWAYS"
         }
       },
       "type": "object"
@@ -2329,6 +2369,13 @@
         }
       },
       "type": "object"
+    },
+    "OpenAICompatibleGateways": {
+      "items": {
+        "$ref": "#/$defs/OpenAICompatibleGateway"
+      },
+      "type": "array",
+      "description": "OpenAICompatibleGateways is a list of OpenAI-compatible gateway destinations. It implements encoding.TextUnmarshaler so the whole list can be provided through a single environment variable using the same YAML/JSON shape as the config file."
     },
     "OpenAIConfig": {
       "properties": {

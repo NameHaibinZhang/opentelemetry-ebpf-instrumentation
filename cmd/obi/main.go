@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -34,15 +35,33 @@ const (
 	configVersionV2 = "v2"
 )
 
+// embeddedDefaultConfig holds the built-in default configuration used as a
+// fallback when no configuration file is provided via --config or the
+// OTEL_EBPF_CONFIG_PATH environment variable. This allows the sidecar to run
+// without a mounted ConfigMap in every namespace.
+//
+// NOTE: this directive must live in main.go (not a separate file) because the
+// build compiles a single file: `go build cmd/obi/main.go` (see MAIN_GO_FILE
+// in the Makefile). A go:embed var in any other file would be excluded.
+//
+//go:embed default_config.yml
+var embeddedDefaultConfig []byte
+
 func loadConfig(configPath *string) (*obi.Config, string) {
-	var configReader io.ReadCloser
+	var configReader io.Reader
 	if configPath != nil && *configPath != "" {
-		var err error
-		if configReader, err = os.Open(*configPath); err != nil {
+		f, err := os.Open(*configPath)
+		if err != nil {
 			slog.Error("can't open "+*configPath, "error", err)
 			os.Exit(-1)
 		}
-		defer configReader.Close()
+		defer f.Close()
+		configReader = f
+	} else {
+		// No configuration file provided: fall back to the built-in default
+		// configuration embedded in the binary, so the sidecar works without a
+		// mounted ConfigMap. Environment variables still override these values.
+		configReader = bytes.NewReader(embeddedDefaultConfig)
 	}
 
 	config, version, err := loadConfigReader(configReader)

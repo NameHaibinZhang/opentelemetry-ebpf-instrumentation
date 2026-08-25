@@ -1,0 +1,82 @@
+# Built-in default configuration for the sidecar deployment.
+#
+# This file is embedded into the binary (see default_config.go) and used as a
+# fallback when no configuration file is provided via --config or the
+# OTEL_EBPF_CONFIG_PATH environment variable. It lets the sidecar run without a
+# mounted ConfigMap in every namespace. Environment variables still override
+# any value set here.
+log_level: warn
+
+discovery:
+  exclude_instrument:
+    - k8s_namespace: obi-system
+    - k8s_namespace: ack-onepilot
+    - k8s_namespace: arms-prom
+  instrument:
+    # Both values are substituted from the environment at load time, so the
+    # sidecar can narrow its instrumentation targets without a mounted
+    # ConfigMap. Unset OBI_SIDECAR_TARGET_PORTS yields an empty port set, which
+    # the matcher skips, keeping the default "instrument everything" behaviour.
+    - exe_path: "${OBI_SIDECAR_TARGET_EXE:-*}"
+      open_ports: "${OBI_SIDECAR_TARGET_PORTS:-}"
+
+attributes:
+  kubernetes:
+    enable: false
+  select:
+    traces:
+      include:
+        - "gen_ai.*"
+        - "gen_ai.tool.call.arguments"
+        - "gen_ai.tool.call.result"
+
+routes:
+  unmatched: low-cardinality
+  max_path_segment_cardinality: 500
+
+ebpf:
+  context_propagation: all
+  track_request_headers: true
+  payload_extraction:
+    http:
+      genai:
+        openai:
+          enabled: true
+        anthropic:
+          enabled: true
+        retrieval:
+          enabled: true
+        mcp:
+          enabled: true
+        qwen:
+          enabled: true
+        embedding:
+          enabled: true
+        gemini:
+          enabled: true
+        rerank:
+          enabled: true
+      # NOTE: jsonrpc is a sibling of genai (http.jsonrpc), not nested under it.
+      jsonrpc:
+        enabled: true
+  buffer_sizes:
+    http: 262144
+
+otel_traces_export:
+  batch_timeout: 10s
+  batch_max_size: 512
+  queue_size: 4096
+  backoff_initial_interval: 5s
+  backoff_max_interval: 15s
+  backoff_max_elapsed_time: 2m
+  instrumentations:
+    - http
+    - grpc
+    - sql
+    - redis
+    - kafka
+    - mqtt
+    - mongo
+    - couchbase
+    - memcached
+    - genai
