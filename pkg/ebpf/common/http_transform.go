@@ -51,6 +51,14 @@ func removeQuery(url string) string {
 	return url
 }
 
+// diagTail returns the last n bytes of b as a string, for OBI_DIAG logging.
+func diagTail(b []byte, n int) string {
+	if len(b) > n {
+		b = b[len(b)-n:]
+	}
+	return string(b)
+}
+
 type HTTPInfo struct {
 	BPFHTTPInfo
 	Method       string
@@ -344,6 +352,28 @@ func HTTPInfoEventToSpan(parseCtx *EBPFParseContext, event *BPFHTTPInfo) (reques
 		}
 	} else {
 		requestBuffer = largebuf.NewLargeBufferFrom(event.Buf[:])
+	}
+
+	// OBI_DIAG: raw captured response-buffer state for client responses that
+	// carry large buffers (LLM/embeddings). Shows whether the response body was
+	// correlated at all, its raw size, whether the streaming usage tail is
+	// present in the RAW capture, and the raw tail bytes. Compare against the
+	// de-chunked body logged in OpenAICompatibleSpan to localize capture vs
+	// de-chunk vs parse.
+	if isClient && event.HasLargeBuffers == 1 {
+		if hasResponse {
+			raw := responseBuffer.UnsafeView()
+			slog.Info("OBI_DIAG capture",
+				"dport", event.ConnInfo.D_port,
+				"respFound", true,
+				"rawLen", len(raw),
+				"rawHasUsage", bytes.Contains(raw, []byte("usage")),
+				"rawHasDONE", bytes.Contains(raw, []byte("[DONE]")),
+				"rawHasPromptTok", bytes.Contains(raw, []byte("prompt_tokens")),
+				"rawTail", diagTail(raw, 220))
+		} else {
+			slog.Info("OBI_DIAG capture", "dport", event.ConnInfo.D_port, "respFound", false)
+		}
 	}
 
 	if parseCtx != nil && !parseCtx.payloadExtraction.Enabled() {
