@@ -444,8 +444,10 @@ func mcpAttributes(span *request.Span, optionalAttrs map[attr.Name]struct{}) []a
 	mcp := span.GenAI.MCP
 	attrs := []attribute.KeyValue{
 		attribute.String(string(attr.MCPMethodName), mcp.Method),
-		semconv.GenAIOperationNameKey.String(mcp.OperationName()),
-		genAISpanKindKey.String(genAISpanKind(mcp.OperationName())),
+		genAISpanKindKey.String(genAISpanKind(mcp.GenAIOperationName())),
+	}
+	if op := mcp.GenAIOperationName(); op != "" {
+		attrs = append(attrs, semconv.GenAIOperationNameKey.String(op))
 	}
 	if mcp.ToolName != "" {
 		attrs = append(attrs, attribute.String(string(attr.GenAIToolName), mcp.ToolName))
