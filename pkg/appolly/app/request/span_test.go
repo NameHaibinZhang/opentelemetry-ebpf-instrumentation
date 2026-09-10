@@ -1732,6 +1732,26 @@ func TestSpan_GenAIOperationName(t *testing.T) {
 		result := span.GenAIOperationName()
 		assert.Equal(t, "invoke_model", result)
 	})
+
+	t.Run("MCP execute_tool present", func(t *testing.T) {
+		span := &Span{
+			GenAI: &GenAI{
+				MCP: &MCPCall{Method: MCPMethodToolsCall},
+			},
+		}
+		result := span.GenAIOperationName()
+		assert.Equal(t, ExecuteToolOperationName, result)
+	})
+
+	t.Run("MCP non-tool present", func(t *testing.T) {
+		span := &Span{
+			GenAI: &GenAI{
+				MCP: &MCPCall{Method: "tools/list"},
+			},
+		}
+		result := span.GenAIOperationName()
+		assert.Empty(t, result)
+	})
 }
 
 // Test GenAIProviderName

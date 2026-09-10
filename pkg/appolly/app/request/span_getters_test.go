@@ -1223,6 +1223,32 @@ func TestSpanOTELGetters_GenAITools(t *testing.T) {
 	}
 }
 
+func TestSpanOTELGetters_GenAIToolName(t *testing.T) {
+	getter, ok := spanOTELGetters(attr.GenAIToolName)
+	require.True(t, ok, "getter should be found for GenAIToolName")
+
+	// non-MCP span
+	kv := getter(&Span{Type: EventTypeHTTPClient})
+	assert.False(t, kv.Valid(), "attribute should be omitted, got %v", kv)
+
+	// MCP span without a tool name
+	kv = getter(&Span{
+		Type:    EventTypeHTTPClient,
+		SubType: HTTPSubtypeMCP,
+		GenAI:   &GenAI{MCP: &MCPCall{Method: MCPMethodToolsCall}},
+	})
+	assert.False(t, kv.Valid(), "attribute should be omitted, got %v", kv)
+
+	// MCP tool span keeps the tool name
+	kv = getter(&Span{
+		Type:    EventTypeHTTPClient,
+		SubType: HTTPSubtypeMCP,
+		GenAI:   &GenAI{MCP: &MCPCall{Method: MCPMethodToolsCall, ToolName: "get-weather"}},
+	})
+	require.True(t, kv.Valid())
+	assert.Equal(t, "get-weather", kv.Value.AsString())
+}
+
 func TestSpanOTELGetters_Instance(t *testing.T) {
 	getter, ok := spanOTELGetters(attr.Instance)
 	require.True(t, ok, "getter should be found for Instance")

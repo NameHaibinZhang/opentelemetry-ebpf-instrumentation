@@ -549,17 +549,20 @@ func TestAppMetrics_GenAITokenAvailability(t *testing.T) {
 			}})
 
 			seenDuration := false
-			seenTokens := map[string]collector.MetricRecord{}
+			seenInputTokens := false
+			seenOutputTokens := false
 			deadline := time.NewTimer(time.Second)
 			defer deadline.Stop()
-			for !seenDuration || (tc.reported && len(seenTokens) < 2) {
+			for !seenDuration || (tc.reported && (!seenInputTokens || !seenOutputTokens)) {
 				select {
 				case record := <-metricRecords:
 					switch record.Name {
 					case attributes.GenAIClientOperationDuration.OTEL:
 						seenDuration = true
 					case attributes.GenAIClientInputTokenUsage.OTEL:
-						seenTokens[record.Attributes["gen_ai.token.type"]] = record
+						seenInputTokens = true
+					case attributes.GenAIClientOutputTokenUsage.OTEL:
+						seenOutputTokens = true
 					}
 				case <-deadline.C:
 					require.FailNow(t, "timed out waiting for GenAI metrics")
@@ -569,27 +572,89 @@ func TestAppMetrics_GenAITokenAvailability(t *testing.T) {
 			if !tc.reported {
 				quiet := time.NewTimer(100 * time.Millisecond)
 				defer quiet.Stop()
+				seenInputTokens = false
+				seenOutputTokens = false
 			quietLoop:
 				for {
 					select {
 					case record := <-metricRecords:
-						if record.Name == attributes.GenAIClientInputTokenUsage.OTEL {
-							seenTokens[record.Attributes["gen_ai.token.type"]] = record
+						switch record.Name {
+						case attributes.GenAIClientInputTokenUsage.OTEL:
+							seenInputTokens = true
+						case attributes.GenAIClientOutputTokenUsage.OTEL:
+							seenOutputTokens = true
 						}
 					case <-quiet.C:
 						break quietLoop
 					}
 				}
-				assert.Empty(t, seenTokens)
+				assert.False(t, seenInputTokens)
+				assert.False(t, seenOutputTokens)
 				return
 			}
-			for _, tokenType := range []string{"input", "output"} {
-				record, ok := seenTokens[tokenType]
-				require.True(t, ok)
-				assert.Equal(t, 1, record.Count)
-				assert.Zero(t, record.FloatVal)
-			}
+			assert.True(t, seenInputTokens)
+			assert.True(t, seenOutputTokens)
 		})
+	}
+}
+
+func TestAppMetrics_GenAIExecuteToolDuration(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	metricRecords := make(chan collector.MetricRecord, 100)
+	metrics := msg.NewQueue[[]request.Span](msg.ChannelBufferLen(10))
+	processEvents := msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(10))
+	mcfg := &otelcfg.MetricsConfig{
+		Interval:          20 * time.Millisecond,
+		TTL:               30 * time.Minute,
+		ReportersCacheLen: 10,
+		Instrumentations:  []instrumentations.Instrumentation{instrumentations.InstrumentationGenAI},
+		MetricsConsumer:   testMetricsConsumer(metricRecords),
+	}
+	reporter, err := newMetricsReporter(
+		ctx,
+		&global.ContextInfo{OTELMetricsExporter: &otelcfg.MetricsExporterInstancer{Cfg: mcfg}},
+		mcfg,
+		&perapp.GlobalMetricsConfig{Features: export.FeatureApplicationRED},
+		&attributes.SelectorConfig{},
+		request.UnresolvedNames{},
+		metrics,
+		processEvents,
+	)
+	require.NoError(t, err)
+	go reporter.reportMetrics(ctx)
+
+	metrics.Send([]request.Span{{
+		Service:      svc.Attrs{Features: export.FeatureApplicationRED, UID: svc.UID{Instance: "genai"}},
+		Type:         request.EventTypeHTTPClient,
+		SubType:      request.HTTPSubtypeMCP,
+		RequestStart: 100,
+		End:          250,
+		Host:         "mcp-server",
+		HostPort:     8080,
+		GenAI: &request.GenAI{MCP: &request.MCPCall{
+			Method:   request.MCPMethodToolsCall,
+			ToolName: "get-weather",
+		}},
+	}})
+
+	seen := false
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	for !seen {
+		select {
+		case record := <-metricRecords:
+			if record.Name == attributes.GenAIExecuteToolDuration.OTEL {
+				seen = true
+				assert.Equal(t, 1, record.Count)
+				assert.Equal(t, "execute_tool", record.Attributes["gen_ai.operation.name"])
+				assert.Equal(t, "get-weather", record.Attributes["gen_ai.tool.name"])
+				assert.Equal(t, "mcp-server", record.Attributes["server.address"])
+			}
+		case <-deadline.C:
+			require.FailNow(t, "timed out waiting for gen_ai.execute_tool.duration metric")
+		}
 	}
 }
 

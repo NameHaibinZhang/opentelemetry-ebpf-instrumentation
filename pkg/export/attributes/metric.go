@@ -207,20 +207,26 @@ var (
 		Type:    InstrumentHistogram,
 	})
 	GenAIClientInputTokenUsage = metric(Name{
-		Section: "gen_ai.client.token.usage.input",
-		OTEL:    "gen_ai.client.token.usage",
+		Section: "gen_ai.client.input.token.usage",
+		OTEL:    "gen_ai.client.input.token.usage",
 		Unit:    "{token}",
 		Type:    InstrumentHistogram,
 	})
 	GenAIClientOutputTokenUsage = metric(Name{
-		Section: "gen_ai.client.token.usage.output",
-		OTEL:    "gen_ai.client.token.usage",
+		Section: "gen_ai.client.output.token.usage",
+		OTEL:    "gen_ai.client.output.token.usage",
 		Unit:    "{token}",
 		Type:    InstrumentHistogram,
 	})
 	GenAIClientOperationDuration = metric(Name{
 		Section: "gen_ai.client.operation.duration",
 		OTEL:    "gen_ai.client.operation.duration",
+		Unit:    "s",
+		Type:    InstrumentHistogram,
+	})
+	GenAIExecuteToolDuration = metric(Name{
+		Section: "gen_ai.execute_tool.duration",
+		OTEL:    "gen_ai.execute_tool.duration",
 		Unit:    "s",
 		Type:    InstrumentHistogram,
 	})
