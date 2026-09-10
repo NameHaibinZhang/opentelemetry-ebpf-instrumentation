@@ -114,6 +114,7 @@ type MetricsReporter struct {
 	attrGenAIInputTokenUsage   []attributes.Field[*request.Span, attribute.KeyValue]
 	attrGenAIOutputTokenUsage  []attributes.Field[*request.Span, attribute.KeyValue]
 	attrGenAIClientDuration    []attributes.Field[*request.Span, attribute.KeyValue]
+	attrGenAIToolDuration      []attributes.Field[*request.Span, attribute.KeyValue]
 
 	userAttribSelection attributes.Selection
 	input               <-chan []request.Span
@@ -164,6 +165,7 @@ type Metrics struct {
 	genAIInputTokenUsage  *Expirer[*request.Span, instrument.Float64Histogram, float64]
 	genAIOutputTokenUsage *Expirer[*request.Span, instrument.Float64Histogram, float64]
 	genAIClientDuration   *Expirer[*request.Span, instrument.Float64Histogram, float64]
+	genAIToolDuration     *Expirer[*request.Span, instrument.Float64Histogram, float64]
 }
 
 type TargetMetrics struct {
@@ -314,6 +316,8 @@ func newMetricsReporter(
 			mr.attrGetters, mr.attributes.For(attributes.GenAIClientOutputTokenUsage))
 		mr.attrGenAIClientDuration = attributes.OpenTelemetryGetters(
 			mr.attrGetters, mr.attributes.For(attributes.GenAIClientOperationDuration))
+		mr.attrGenAIToolDuration = attributes.OpenTelemetryGetters(
+			mr.attrGetters, mr.attributes.For(attributes.GenAIExecuteToolDuration))
 	}
 
 	mr.reporters, err = otelcfg.NewReporterPool[*svc.Attrs, *Metrics](cfg.ReportersCacheLen, cfg.TTL, timeNow,
@@ -402,8 +406,9 @@ func (mr *MetricsReporter) otelMetricOptions() []metric.Option {
 	if mr.is.GenAIEnabled() {
 		opts = append(opts,
 			metric.WithView(mr.otelHistogramConfig(attributes.GenAIClientOperationDuration.OTEL, mr.cfg.Buckets.GenAIClientDurationHistogram)),
-			// the input tokens and output tokens are the same metric, we just need to distinguish the attributes, so we can write the token type
+			metric.WithView(mr.otelHistogramConfig(attributes.GenAIExecuteToolDuration.OTEL, mr.cfg.Buckets.GenAIToolDurationHistogram)),
 			metric.WithView(mr.otelHistogramConfig(attributes.GenAIClientInputTokenUsage.OTEL, mr.cfg.Buckets.GenAITokenUsageHistogram)),
+			metric.WithView(mr.otelHistogramConfig(attributes.GenAIClientOutputTokenUsage.OTEL, mr.cfg.Buckets.GenAITokenUsageHistogram)),
 		)
 	}
 
@@ -612,16 +617,26 @@ func (mr *MetricsReporter) setupOtelMeters(m *Metrics, meter instrument.Meter) e
 		m.genAIClientDuration = NewExpirer[*request.Span, instrument.Float64Histogram, float64](
 			m.ctx, genAIClientDuration, mr.attrGenAIClientDuration, timeNow, mr.cfg.TTL)
 
-		// the input tokens and output tokens are the same metric, we just need to distinguish the attributes, so we can write the token type
-		genAITokenUsage, err := meter.Float64Histogram(attributes.GenAIClientInputTokenUsage.OTEL, instrument.WithUnit(attributes.GenAIClientInputTokenUsage.Unit))
+		genAIInputTokenUsage, err := meter.Float64Histogram(attributes.GenAIClientInputTokenUsage.OTEL, instrument.WithUnit(attributes.GenAIClientInputTokenUsage.Unit))
 		if err != nil {
-			return fmt.Errorf("creating genai client token usage histogram: %w", err)
+			return fmt.Errorf("creating genai client input token usage histogram: %w", err)
 		}
-		// the attributes have the same keys, we just need custom attribute getter for input vs. output token type
 		m.genAIInputTokenUsage = NewExpirer[*request.Span, instrument.Float64Histogram, float64](
-			m.ctx, genAITokenUsage, mr.attrGenAIInputTokenUsage, timeNow, mr.cfg.TTL)
+			m.ctx, genAIInputTokenUsage, mr.attrGenAIInputTokenUsage, timeNow, mr.cfg.TTL)
+
+		genAIOutputTokenUsage, err := meter.Float64Histogram(attributes.GenAIClientOutputTokenUsage.OTEL, instrument.WithUnit(attributes.GenAIClientOutputTokenUsage.Unit))
+		if err != nil {
+			return fmt.Errorf("creating genai client output token usage histogram: %w", err)
+		}
 		m.genAIOutputTokenUsage = NewExpirer[*request.Span, instrument.Float64Histogram, float64](
-			m.ctx, genAITokenUsage, mr.attrGenAIOutputTokenUsage, timeNow, mr.cfg.TTL)
+			m.ctx, genAIOutputTokenUsage, mr.attrGenAIOutputTokenUsage, timeNow, mr.cfg.TTL)
+
+		genAIToolDuration, err := meter.Float64Histogram(attributes.GenAIExecuteToolDuration.OTEL, instrument.WithUnit(attributes.GenAIExecuteToolDuration.Unit))
+		if err != nil {
+			return fmt.Errorf("creating genai execute tool duration histogram: %w", err)
+		}
+		m.genAIToolDuration = NewExpirer[*request.Span, instrument.Float64Histogram, float64](
+			m.ctx, genAIToolDuration, mr.attrGenAIToolDuration, timeNow, mr.cfg.TTL)
 	}
 
 	return nil
@@ -1004,6 +1019,9 @@ func (r *Metrics) record(span *request.Span, mr *MetricsReporter) {
 					genAIOutputTokenUsage, attrs := r.genAIOutputTokenUsage.ForRecord(span)
 					genAIOutputTokenUsage.Record(ctx, float64(tokens), instrument.WithAttributeSet(attrs))
 				}
+			} else if mr.is.GenAIEnabled() && request.IsMCPExecuteToolSpan(span) {
+				genAIToolDuration, attrs := r.genAIToolDuration.ForRecord(span)
+				genAIToolDuration.Record(ctx, duration, instrument.WithAttributeSet(attrs))
 			} else if mr.is.HTTPEnabled() {
 				httpClientDuration, attrs := r.httpClientDuration.ForRecord(span)
 				httpClientDuration.Record(ctx, duration, instrument.WithAttributeSet(attrs))
@@ -1431,4 +1449,5 @@ func (r *Metrics) cleanupAllMetricsInstances() {
 	cleanupMetrics(r.ctx, r.genAIClientDuration)
 	cleanupMetrics(r.ctx, r.genAIInputTokenUsage)
 	cleanupMetrics(r.ctx, r.genAIOutputTokenUsage)
+	cleanupMetrics(r.ctx, r.genAIToolDuration)
 }

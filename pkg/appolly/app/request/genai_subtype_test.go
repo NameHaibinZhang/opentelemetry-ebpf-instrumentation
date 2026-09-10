@@ -29,3 +29,19 @@ func TestGenAIProvidersAreRecordedOnTheGenAIMetrics(t *testing.T) {
 		assert.True(t, IsGenAISubtype(subtype), "subtype %d", subtype)
 	}
 }
+
+func TestIsMCPExecuteToolSpan(t *testing.T) {
+	assert.True(t, IsMCPExecuteToolSpan(&Span{
+		SubType: HTTPSubtypeMCP,
+		GenAI:   &GenAI{MCP: &MCPCall{Method: MCPMethodToolsCall}},
+	}))
+	assert.False(t, IsMCPExecuteToolSpan(&Span{
+		SubType: HTTPSubtypeMCP,
+		GenAI:   &GenAI{MCP: &MCPCall{Method: "tools/list"}},
+	}))
+	assert.False(t, IsMCPExecuteToolSpan(&Span{
+		SubType: HTTPSubtypeOpenAI,
+		GenAI:   &GenAI{MCP: &MCPCall{Method: MCPMethodToolsCall}},
+	}))
+	assert.False(t, IsMCPExecuteToolSpan(&Span{SubType: HTTPSubtypeMCP}))
+}
