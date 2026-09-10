@@ -990,8 +990,8 @@ func TestPrometheusGenAITokenAvailability(t *testing.T) {
 				GenAI:        &request.GenAI{OpenAI: &request.VendorOpenAI{Usage: usage}},
 			}})
 
-			inputCount := regexp.MustCompile(`\ngen_ai_client_token_usage_count\{[^\n]*gen_ai_token_type="input"[^\n]*\} 1`)
-			outputCount := regexp.MustCompile(`\ngen_ai_client_token_usage_count\{[^\n]*gen_ai_token_type="output"[^\n]*\} 1`)
+			inputCount := regexp.MustCompile(`\ngen_ai_client_input_token_usage_count\{[^\n]*\} 1`)
+			outputCount := regexp.MustCompile(`\ngen_ai_client_output_token_usage_count\{[^\n]*\} 1`)
 			require.EventuallyWithT(t, func(ct *assert.CollectT) {
 				exported := getMetrics(ct, promURL)
 				assert.Contains(ct, exported, "gen_ai_client_operation_duration_seconds_count")
@@ -1005,6 +1005,42 @@ func TestPrometheusGenAITokenAvailability(t *testing.T) {
 			}, timeout, 10*time.Millisecond)
 		})
 	}
+}
+
+func TestPrometheusGenAIExecuteToolDuration(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	openPort := testutil.FreeTCPPort(t)
+	promURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", openPort)
+	input := msg.NewQueue[[]request.Span](msg.ChannelBufferLen(10))
+	exporter := makePromExporter(ctx, t,
+		[]instrumentations.Instrumentation{instrumentations.InstrumentationGenAI},
+		openPort,
+		input,
+	)
+	go exporter(ctx)
+
+	input.Send([]request.Span{{
+		Service:      svc.Attrs{Features: export.FeatureApplicationRED, UID: svc.UID{Instance: "genai"}},
+		Type:         request.EventTypeHTTPClient,
+		SubType:      request.HTTPSubtypeMCP,
+		RequestStart: 100,
+		End:          250,
+		Host:         "mcp-server",
+		HostPort:     8080,
+		GenAI: &request.GenAI{MCP: &request.MCPCall{
+			Method:   request.MCPMethodToolsCall,
+			ToolName: "get-weather",
+		}},
+	}})
+
+	durationCount := regexp.MustCompile(`\ngen_ai_execute_tool_duration_seconds_count\{[^\n]*\} 1`)
+	require.EventuallyWithT(t, func(ct *assert.CollectT) {
+		exported := getMetrics(ct, promURL)
+		assert.Regexp(ct, durationCount, exported)
+		assert.Contains(ct, exported, `gen_ai_operation_name="execute_tool"`)
+		assert.Contains(ct, exported, `gen_ai_tool_name="get-weather"`)
+	}, timeout, 10*time.Millisecond)
 }
 
 type mockEventMetrics struct {

@@ -136,6 +136,15 @@ func IsGenAISubtype(subtype int) bool {
 		subtype == HTTPSubtypeOllama
 }
 
+// IsMCPExecuteToolSpan reports whether a span represents an MCP tool execution
+// (tools/call), which maps to the gen_ai.execute_tool.duration metric.
+func IsMCPExecuteToolSpan(span *Span) bool {
+	return span.SubType == HTTPSubtypeMCP &&
+		span.GenAI != nil &&
+		span.GenAI.MCP != nil &&
+		span.GenAI.MCP.Method == MCPMethodToolsCall
+}
+
 //nolint:cyclop
 func (t EventType) String() string {
 	switch t {
@@ -2556,6 +2565,9 @@ func (s *Span) GenAIOperationName() string {
 	}
 	if s.GenAI.Retrieval != nil {
 		return s.GenAI.Retrieval.OperationName()
+	}
+	if s.GenAI.MCP != nil {
+		return s.GenAI.MCP.GenAIOperationName()
 	}
 	return ""
 }

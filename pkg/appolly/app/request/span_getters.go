@@ -527,14 +527,6 @@ func spanOTELGetters(name attr.Name) (attributes.Getter[*Span, attribute.KeyValu
 			// rather than emitting an empty (invalid) variant.
 			return attribute.KeyValue{}
 		}
-	case attr.GenAITokenTypeInput:
-		getter = func(_ *Span) attribute.KeyValue {
-			return semconv.GenAITokenTypeKey.String("input")
-		}
-	case attr.GenAITokenTypeOutput:
-		getter = func(_ *Span) attribute.KeyValue {
-			return semconv.GenAITokenTypeKey.String("output")
-		}
 	case attr.GenAIRequestModel:
 		getter = func(s *Span) attribute.KeyValue {
 			return semconv.GenAIRequestModelKey.String(s.GenAIRequestModel())
@@ -542,6 +534,13 @@ func spanOTELGetters(name attr.Name) (attributes.Getter[*Span, attribute.KeyValu
 	case attr.GenAIResponseModel:
 		getter = func(s *Span) attribute.KeyValue {
 			return semconv.GenAIResponseModelKey.String(s.GenAIResponseModel())
+		}
+	case attr.GenAIToolName:
+		getter = func(s *Span) attribute.KeyValue {
+			if s.SubType == HTTPSubtypeMCP && s.GenAI != nil && s.GenAI.MCP != nil && s.GenAI.MCP.ToolName != "" {
+				return semconv.GenAIToolNameKey.String(s.GenAI.MCP.ToolName)
+			}
+			return attribute.KeyValue{}
 		}
 	case attr.JSONRPCProtocolVersion:
 		getter = func(s *Span) attribute.KeyValue {

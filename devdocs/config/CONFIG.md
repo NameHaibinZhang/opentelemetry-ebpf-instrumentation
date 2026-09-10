@@ -649,6 +649,7 @@ Buckets defines the histograms bucket boundaries, and allows users to redefine t
 | `duration_histogram` | `number`[] |  |  |
 | `gen_ai_client_operation_duration_histogram` | `number`[] |  |  |
 | `gen_ai_client_token_usage_histogram` | `number`[] |  |  |
+| `gen_ai_execute_tool_duration_histogram` | `number`[] |  |  |
 | `jvm_gc_duration_histogram` | `number`[] |  |  |
 | `request_size_histogram` | `number`[] |  |  |
 | `response_size_histogram` | `number`[] |  |  |
