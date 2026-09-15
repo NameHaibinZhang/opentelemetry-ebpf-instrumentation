@@ -12,6 +12,9 @@ discovery:
     - k8s_namespace: obi-system
     - k8s_namespace: ack-onepilot
     - k8s_namespace: arms-prom
+    - k8s_namespace: kube-system
+    - k8s_namespace: kube-public
+    - k8s_namespace: kube-node-lease
   instrument:
     # Both values are substituted from the environment at load time, so the
     # sidecar can narrow its instrumentation targets without a mounted
