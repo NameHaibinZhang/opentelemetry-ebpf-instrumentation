@@ -1470,6 +1470,10 @@ type Span struct {
 	// Anything but ResponseParsed means Status holds no observation. Whether the
 	// duration is a measurement is recorded separately, by ignoreDurations.
 	ResponseObservation ResponseObservation `json:"-"`
+	// OpenAICompatibleGatewayHost indicates the client request's target host matched
+	// a configured openai_compatible.gateways entry, regardless of whether the response
+	// parsed as GenAI content. Used for ARMS resource tagging; not serialized.
+	OpenAICompatibleGatewayHost bool `json:"-"`
 
 	// RequestHeaders stores extracted HTTP request headers based on enrichment rules.
 	// Keys are canonical header names, values are all header values (possibly obfuscated).
@@ -2594,6 +2598,32 @@ func (s *Span) GenAIOperationName() string {
 		return s.GenAI.Retrieval.OperationName()
 	}
 	return ""
+}
+
+func (s *Span) GenAISpanKind() string {
+	op := s.GenAIOperationName()
+	if op == "" {
+		return ""
+	}
+	return genAISpanKindFromOp(op)
+}
+
+func genAISpanKindFromOp(operationName string) string {
+	switch operationName {
+	case "chat", "text_completion", "generate_content", "generation",
+		"invoke_model", "conversation", "chatkit.session", "chatkit.thread":
+		return "LLM"
+	case "embeddings":
+		return "EMBEDDING"
+	case "execute_tool":
+		return "TOOL"
+	case "retrieval":
+		return "RETRIEVER"
+	case "rerank":
+		return "RERANKER"
+	default:
+		return "LLM"
+	}
 }
 
 func (s *Span) GenAIProviderName() string {
