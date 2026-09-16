@@ -84,10 +84,13 @@ type ProcessWatcherRescan struct {
 	// TargetsChanged forgets all tracked PIDs so already-running processes are
 	// re-evaluated (e.g. after AddK8sWorkload).
 	TargetsChanged <-chan struct{}
+	// CriteriaChanged forgets all tracked PIDs after the finding criteria were
+	// hot-reloaded (e.g. from the ConfigMap), so matching is re-evaluated.
+	CriteriaChanged <-chan struct{}
 }
 
 func (r ProcessWatcherRescan) enabled() bool {
-	return r.AddedPIDs != nil || r.TargetsChanged != nil
+	return r.AddedPIDs != nil || r.TargetsChanged != nil || r.CriteriaChanged != nil
 }
 
 // ProcessWatcherFunc polls every PollInterval for new processes and forwards either new or deleted process PIDs
@@ -224,6 +227,12 @@ func (pa *pollAccounter) runRescanNotify(ctx context.Context, log *slog.Logger) 
 			}
 			pa.forgetAll()
 			log.Debug("forgot all PIDs after dynamic selection targets changed")
+		case _, ok := <-pa.rescan.CriteriaChanged:
+			if !ok {
+				return
+			}
+			pa.forgetAll()
+			log.Info("rescan triggered: cleared tracked processes for full re-discovery")
 		}
 	}
 }
