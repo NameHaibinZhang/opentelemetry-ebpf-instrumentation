@@ -6,10 +6,12 @@
 # mounted ConfigMap in every namespace. Environment variables still override
 # any value set here.
 #
-# Batching below is tuned to keep the sidecar within a modest memory budget
-# (e.g. 50Mi). Raise it via environment variables
-# (OTEL_EBPF_OTLP_TRACES_BATCH_MAX_SIZE, OTEL_EBPF_OTLP_TRACES_QUEUE_SIZE, ...)
-# when higher trace throughput is required.
+# Batching and eBPF map sizing below are tuned to keep the sidecar within a
+# modest memory budget (e.g. 50Mi). Batching can be raised via environment
+# variables (OTEL_EBPF_OTLP_TRACES_BATCH_MAX_SIZE,
+# OTEL_EBPF_OTLP_TRACES_QUEUE_SIZE, ...) when higher trace throughput is
+# required; ebpf.maps_config has no environment variable and must be changed
+# in this file (or in a mounted config that replaces it).
 log_level: warn
 
 discovery:
@@ -43,6 +45,16 @@ routes:
   max_path_segment_cardinality: 500
 
 ebpf:
+  # Divides every resizable eBPF map by 8 (e.g. 30000 -> 3750 entries,
+  # 10000 -> 1250). Preallocated maps are charged to the container's cgroup on
+  # kernels >= 5.11, making them the largest fixed memory cost: the whole
+  # tracer set shrinks from roughly 210 MiB at 0 to roughly 37 MiB here, which
+  # is what lets the sidecar fit a 100Mi limit. The remaining ~10 MiB floor is
+  # sock_dir and tracked_sock_cookies, which cannot be scaled. Raise this
+  # value (max 3) for targets with very high in-flight request concurrency;
+  # it has no environment variable, so edit this file or mount a ConfigMap.
+  maps_config:
+    global_scale_factor: -3
   context_propagation: all
   track_request_headers: true
   payload_extraction:
