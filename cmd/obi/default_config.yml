@@ -5,6 +5,11 @@
 # OTEL_EBPF_CONFIG_PATH environment variable. It lets the sidecar run without a
 # mounted ConfigMap in every namespace. Environment variables still override
 # any value set here.
+#
+# Batching below is tuned to keep the sidecar within a modest memory budget
+# (e.g. 50Mi). Raise it via environment variables
+# (OTEL_EBPF_OTLP_TRACES_BATCH_MAX_SIZE, OTEL_EBPF_OTLP_TRACES_QUEUE_SIZE, ...)
+# when higher trace throughput is required.
 log_level: warn
 
 discovery:
@@ -66,20 +71,22 @@ ebpf:
     http: 262144
 
 otel_traces_export:
-  batch_timeout: 10s
-  batch_max_size: 512
-  queue_size: 4096
+  batch_timeout: 5s
+  batch_max_size: 128
+  # queue_size must be >= 2 * batch_max_size, otherwise batches are rejected.
+  queue_size: 512
   backoff_initial_interval: 5s
   backoff_max_interval: 15s
   backoff_max_elapsed_time: 2m
   instrumentations:
+    # GenAI, MCP and JSON-RPC spans are HTTP-typed, so "http" (and "grpc" for
+    # gRPC traffic) is all that is needed. Database and messaging are omitted
+    # to avoid span churn unrelated to GenAI observability.
     - http
     - grpc
-    - sql
-    - redis
-    - kafka
-    - mqtt
-    - mongo
-    - couchbase
-    - memcached
+
+otel_metrics_export:
+  instrumentations:
+    - http
+    - grpc
     - genai
