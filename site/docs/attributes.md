@@ -53,6 +53,7 @@ HTTP attributes OBI emits that are not part of upstream semconv (captured reques
 
 | Attribute | Type | Stability | Description | Examples |
 | --- | --- | --- | --- | --- |
+| `gen_ai.span.kind` | string | development | Coarse classification of the GenAI span, derived from `gen_ai.operation.name` (LLM / EMBEDDING / TOOL / RETRIEVER / RERANKER). | LLM; EMBEDDING |
 | `http.request.body.content` | string | development | Captured HTTP request body content. Only populated when OBI's body capture is enabled and subject to OBI's body-extraction rules (size limits, content-type filtering, obfuscation). | {"user":"alice"} |
 | `http.response.body.content` | string | development | Captured HTTP response body content. Only populated when OBI's body capture is enabled and subject to OBI's body-extraction rules (size limits, content-type filtering, obfuscation). | {"status":"ok"} |
 | `obi.http.response.observed` | boolean | development | Present and false on an HTTP span whose response was never seen; absent otherwise. `http.response.status_code` is emitted instead once a response is observed. | false |
@@ -175,6 +176,7 @@ Resource attributes OBI's trace exporter sets on the exported `ResourceSpans` in
 
 | Attribute | Type | Stability | Description | Examples |
 | --- | --- | --- | --- | --- |
+| `acs.arms.service.feature` | string | development | Alibaba Cloud ARMS service-feature tag, carried as a resource attribute on GenAI application signals so ARMS can classify the service. OBI fork sets it to `genai_app`. | genai_app |
 | `otel.scope.name` | string | stable | The name of the instrumentation scope - (`InstrumentationScope.Name` in OTLP). | io.opentelemetry.contrib.mongodb |
 
 ## `x.obi.db`
