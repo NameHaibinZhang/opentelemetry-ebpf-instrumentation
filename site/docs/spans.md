@@ -262,9 +262,9 @@ OBI GenAI inference client span.
 | `gen_ai.request.seed` | int | development | Requests with same seed value more likely to return same result. | 100 |
 | `gen_ai.request.stop_sequences` | string[] | development | List of sequences that the model will use to stop generating further tokens. | ["forest","lived"] |
 | `gen_ai.request.stream` | boolean | development | Indicates whether the GenAI request was made in streaming mode. |  |
-| `gen_ai.request.temperature` | double | development | The temperature setting for the GenAI request. | 0 |
-| `gen_ai.request.top_k` | double | development | The top_k sampling setting for the GenAI request. | 1 |
-| `gen_ai.request.top_p` | double | development | The top_p sampling setting for the GenAI request. | 1 |
+| `gen_ai.request.temperature` | double | development | The temperature setting for the GenAI request. | 0.0 |
+| `gen_ai.request.top_k` | double | development | The top_k sampling setting for the GenAI request. | 1.0 |
+| `gen_ai.request.top_p` | double | development | The top_p sampling setting for the GenAI request. | 1.0 |
 | `gen_ai.response.finish_reasons` | string[] | development | Array of reasons the model stopped generating tokens, corresponding to each generation received. | ["stop"]; ["stop","length"] |
 | `gen_ai.response.id` | string | development | The unique identifier for the completion. | chatcmpl-123 |
 | `gen_ai.response.model` | string | development | The name of the model that generated the response. | gpt-4-0613 |
