@@ -98,6 +98,7 @@ func NewNodeMeta(
 		)),
 		otelNodeFetcher(gcp.NewDetector()),
 		otelNodeFetcher(ec2.NewResourceDetector()),
+		alibabaCloudNodeFetcher(),
 		func(_ context.Context) (NodeMeta, error) {
 			return NodeMeta{HostID: overrideHost}, nil
 		},

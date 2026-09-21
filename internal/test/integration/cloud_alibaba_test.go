@@ -17,10 +17,10 @@ import (
 	ti "go.opentelemetry.io/obi/pkg/test/integration"
 )
 
-// This file contains tests related with the integration with Amazon Web Services
-func TestCloudResourceMetadata_Azure(t *testing.T) {
-	network := setupIMDSSubnet(t, "169.254.0.0/16")
-	setupMockAzureIMDS(t, network)
+// This file contains tests related with the integration with Alibaba Cloud
+func TestCloudResourceMetadata_Alibaba(t *testing.T) {
+	network := setupIMDSSubnet(t, "100.100.100.0/24")
+	setupMockAlibabaIMDS(t, network)
 	setupContainerPrometheus(t, network, "prometheus-config-perapp.yml")
 	setupContainerJaeger(t, network)
 	setupContainerWeaver(t, network)
@@ -31,14 +31,15 @@ func TestCloudResourceMetadata_Azure(t *testing.T) {
 		return
 	}
 
-	// Start OBI to instrument the test server
-	// Configure OBI to use the mock IMDS by setting the Azure metadata endpoint
+	// Start OBI to instrument the test server.
+	// No endpoint override is needed: the Alibaba Cloud IMDS is queried at its
+	// well-known address, which the mock network provides at 100.100.100.200
 	o := obi{
 		Env: []string{
 			`OTEL_EBPF_PROMETHEUS_PORT=8999`,
 			"OTEL_EBPF_OPEN_PORT=8080",
 		},
-		Logs: createLogOutput(t, "cloud-meta-azure"),
+		Logs: createLogOutput(t, "cloud-meta-alibaba"),
 	}
 	if !KernelLockdownMode() {
 		o.SecurityConfigSuffix = "_none"
@@ -53,34 +54,36 @@ func TestCloudResourceMetadata_Azure(t *testing.T) {
 		ti.DoHTTPGet(t, "http://localhost:8080/rolldice", 200)
 	}
 
-	// Query Prometheus for target_info with cluster_name attribute
+	// Query Prometheus for target_info with cloud metadata attributes
 	pq := promtest.Client{HostPort: prometheusHostPort}
 
 	t.Run("OTEL metrics", func(t *testing.T) {
-		testAzureMetrics(t, pq, "rolldice", "otel")
+		testAlibabaMetrics(t, pq, "rolldice", "otel")
 	})
 	t.Run("Prometheus metrics", func(t *testing.T) {
-		testAzureMetrics(t, pq, "rolldice", "prometheus")
+		testAlibabaMetrics(t, pq, "rolldice", "prometheus")
 	})
 	t.Run("OTEL traces", func(t *testing.T) {
-		testAzureTraces(t)
+		testAlibabaTraces(t)
 	})
 
 	runWeaverValidation(t)
 }
 
-func testAzureMetrics(t *testing.T, pq promtest.Client, serviceName, exporter string) {
+func testAlibabaMetrics(t *testing.T, pq promtest.Client, serviceName, exporter string) {
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
-		// attribute values taken from aws-metadata-mock.json
+		// attribute values taken from alibaba-imds/nginx.conf mock
 		query := `target_info{` +
 			`service_name="` + serviceName + `",` +
 			`exported="` + exporter + `",` +
-			`cloud_platform="azure.vm",` +
-			`cloud_provider="azure",` +
-			`cloud_region="westus",` +
-			`cloud_resource_id="/long/tail/of/stuff",` +
-			`host_id="02aab8a4-74ef-476e-8182-f6d2ba4166a6",` +
-			`host_type="Standard_A3"` +
+			`cloud_account_id="1234567890123456",` +
+			`cloud_availability_zone="cn-shanghai-e",` +
+			`cloud_platform="alibaba_cloud_ecs",` +
+			`cloud_provider="alibaba_cloud",` +
+			`cloud_region="cn-shanghai",` +
+			`host_id="i-2ze88pl0kljl42nbq6kd",` +
+			`host_image_id="aliyun_2_1903_x64_20G_alibase_20240124.vhd",` +
+			`host_type="ecs.g7.large"` +
 			`}`
 		results, err := pq.Query(query)
 		require.NoError(ct, err, "failed to query metrics")
@@ -88,7 +91,7 @@ func testAzureMetrics(t *testing.T, pq promtest.Client, serviceName, exporter st
 	}, testTimeout, 500*time.Millisecond)
 }
 
-func testAzureTraces(t *testing.T) {
+func testAlibabaTraces(t *testing.T) {
 	var trace jaeger.Trace
 	require.EventuallyWithT(t, func(ct *assert.CollectT) {
 		resp, err := http.Get(jaegerQueryURL + "?service=rolldice&operation=GET%20%2Frolldice")
@@ -107,12 +110,14 @@ func testAzureTraces(t *testing.T) {
 
 	for _, proc := range trace.Processes {
 		sd := jaeger.DiffAsRegexp([]jaeger.Tag{
-			{Key: "cloud.platform", Type: "string", Value: "^azure.vm$"},
-			{Key: "cloud.provider", Type: "string", Value: "^azure$"},
-			{Key: "cloud.region", Type: "string", Value: "^westus$"},
-			{Key: "cloud.resource_id", Type: "string", Value: "^/long/tail/of/stuff$"},
-			{Key: "host.id", Type: "string", Value: "^02aab8a4-74ef-476e-8182-f6d2ba4166a6$"},
-			{Key: "host.type", Type: "string", Value: "^Standard_A3$"},
+			{Key: "cloud.account.id", Type: "string", Value: "^1234567890123456$"},
+			{Key: "cloud.availability_zone", Type: "string", Value: "^cn-shanghai-e$"},
+			{Key: "cloud.platform", Type: "string", Value: "^alibaba_cloud_ecs$"},
+			{Key: "cloud.provider", Type: "string", Value: "^alibaba_cloud$"},
+			{Key: "cloud.region", Type: "string", Value: "^cn-shanghai$"},
+			{Key: "host.id", Type: "string", Value: "^i-2ze88pl0kljl42nbq6kd$"},
+			{Key: "host.image.id", Type: "string", Value: "^aliyun_2_1903_x64_20G_alibase_20240124.vhd$"},
+			{Key: "host.type", Type: "string", Value: "^ecs.g7.large$"},
 		}, proc.Tags)
 		require.Empty(t, sd)
 	}
