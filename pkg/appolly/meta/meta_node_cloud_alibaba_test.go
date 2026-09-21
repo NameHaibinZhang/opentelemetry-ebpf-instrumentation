@@ -137,7 +137,7 @@ func TestAlibabaCloudNodeFetcher_RetriableErrors(t *testing.T) {
 
 		meta, err := alibabaCloudNodeFetcher()(t.Context())
 		require.Error(t, err)
-		assert.NotErrorIs(t, err, errNotAlibabaCloud)
+		require.NotErrorIs(t, err, errNotAlibabaCloud)
 		assert.Equal(t, NodeMeta{}, meta)
 	})
 
@@ -154,7 +154,7 @@ func TestAlibabaCloudNodeFetcher_RetriableErrors(t *testing.T) {
 
 		meta, err := alibabaCloudNodeFetcher()(t.Context())
 		require.Error(t, err)
-		assert.NotErrorIs(t, err, errNotAlibabaCloud)
+		require.NotErrorIs(t, err, errNotAlibabaCloud)
 		assert.Equal(t, NodeMeta{}, meta)
 	})
 }

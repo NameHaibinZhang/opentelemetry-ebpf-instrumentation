@@ -134,7 +134,7 @@ func alibabaIMDSRequest(ctx context.Context, method, url, token string) (string,
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode >= http.StatusInternalServerError {
 			// temporary IMDS failure: retriable
-			return "", fmt.Errorf("Alibaba Cloud IMDS returned %q for %s", resp.Status, url)
+			return "", fmt.Errorf("IMDS returned %q for %s", resp.Status, url)
 		}
 		return "", fmt.Errorf("%w: IMDS returned %q for %s", errNotAlibabaCloud, resp.Status, url)
 	}
