@@ -18,15 +18,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The IMDS mocks need to be accessible through their well-known addresses
-// (169.254.169.254 for Azure, 100.100.100.200 for Alibaba Cloud), so we configure
-// the Docker network to access them at their original IP without requiring to
-// override the IMDS client endpoint.
-func setupIMDSSubnet(t *testing.T, subnet string) dockertest.Network {
+// The IMDS mock needs to be accessible through 169.254.169.254, so we configure the
+// Docker network to access it at its original IP without requiring to override
+// the IMDS client endpoint.
+func setupIMDSSubnet(t *testing.T) dockertest.Network {
 	t.Helper()
 	t.Log("Starting IMDS Mock network...")
 
-	prefix, err := netip.ParsePrefix(subnet)
+	prefix, err := netip.ParsePrefix("169.254.0.0/16")
 	require.NoError(t, err, "could not parse Docker subnet")
 
 	create, err := dockerPool.Client().NetworkCreate(t.Context(), fmt.Sprintf("test-imds-network-%d", time.Now().UnixNano()), client.NetworkCreateOptions{
@@ -178,46 +177,6 @@ func setupMockGCPIMDS(t *testing.T, net dockertest.Network) {
 		t.Fatal("GCP IMDS Mock container not available after timeout")
 	}
 	t.Log("GCP IMDS Mock container started", "state", mockIMDS.Container().State.Status)
-}
-
-// like the Azure and GCP IMDS, there is no mock container providing the Alibaba Cloud
-// metadata, so we mock our own using nginx. The session token is served by
-// /latest/api/token on PUT requests, and every metadata endpoint rejects requests
-// without that token, emulating an instance with HttpTokens=required.
-// The contents served by this mock IMDS are extracted from the official Alibaba Cloud docs:
-// https://help.aliyun.com/zh/ecs/user-guide/view-instance-metadata/
-func setupMockAlibabaIMDS(t *testing.T, imdsSubnet dockertest.Network) {
-	t.Helper()
-	t.Log("Starting Alibaba Cloud IMDS Mock container...")
-
-	mockIMDS, err := dockerPool.Run(t.Context(), imgNginx.Repository(),
-		dockertest.WithTag(imgNginx.Tag()),
-		dockertest.WithName(fmt.Sprintf("mock-imds-alibaba-nginx-%d", time.Now().UnixNano())),
-		dockertest.WithMounts([]string{
-			pathRoot + "/internal/test/integration/components/alibaba-imds/nginx.conf:/etc/nginx/nginx.conf",
-		}),
-		dockertest.WithPortBindings(portBindings("80/tcp", "1338")),
-		dockertest.WithContainerConfig(func(config *container.Config) {
-			config.ExposedPorts = exposedPorts("80/tcp")
-		}),
-		dockertest.WithoutReuse(),
-	)
-	require.NoError(t, err, "could not start Alibaba Cloud IMDS Mock container")
-	t.Cleanup(func() {
-		require.NoError(t, mockIMDS.Close(context.Background()), "could not remove Alibaba Cloud IMDS Mock container")
-	})
-
-	_, err = dockerPool.Client().NetworkConnect(t.Context(), imdsSubnet.ID(), client.NetworkConnectOptions{
-		Container:      mockIMDS.ID(),
-		EndpointConfig: endpointIPv4("100.100.100.200"),
-	})
-	require.NoError(t, err, "could not connect Alibaba Cloud IMDS Mock container to network")
-
-	if err := waitUntilReadyToServe("http://127.0.0.1:1338/healthz"); err != nil {
-		t.Fatal("Alibaba Cloud IMDS Mock container not available after timeout")
-	}
-
-	t.Log("Alibaba Cloud IMDS Mock container started", "state", mockIMDS.Container().State.Status)
 }
 
 func waitUntilReadyToServe(metaURL string) error {

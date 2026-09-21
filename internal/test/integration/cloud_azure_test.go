@@ -19,7 +19,7 @@ import (
 
 // This file contains tests related with the integration with Amazon Web Services
 func TestCloudResourceMetadata_Azure(t *testing.T) {
-	network := setupIMDSSubnet(t, "169.254.0.0/16")
+	network := setupIMDSSubnet(t)
 	setupMockAzureIMDS(t, network)
 	setupContainerPrometheus(t, network, "prometheus-config-perapp.yml")
 	setupContainerJaeger(t, network)
