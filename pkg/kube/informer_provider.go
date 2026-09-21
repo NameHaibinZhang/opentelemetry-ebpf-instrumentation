@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"path"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"text/template"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -37,7 +39,11 @@ var clusterNameNodeLabels = []string{
 	"alpha.eksctl.io/cluster-name",
 	"cluster.x-k8s.io/cluster-name",
 	"kubernetes.azure.com/cluster",
+	"ack.aliyun.com",
 }
+
+// injectable for testing
+var interfaceAddrs = net.InterfaceAddrs
 
 func klog() *slog.Logger {
 	return slog.With("component", "kube.MetadataProvider")
@@ -225,9 +231,12 @@ func (mp *MetadataProvider) fetchClusterNameFromNodeLabels(ctx context.Context) 
 	if len(nodes.Items) == 0 {
 		return "", fmt.Errorf("fetchClusterNameFromNodeLabels can't find node %s", mp.localNodeName)
 	}
-	node := nodes.Items[0]
+	return clusterNameFromNodeLabels(nodes.Items[0].Labels)
+}
+
+func clusterNameFromNodeLabels(labels map[string]string) (string, error) {
 	for _, label := range clusterNameNodeLabels {
-		if name, ok := node.Labels[label]; ok {
+		if name, ok := labels[label]; ok {
 			return name, nil
 		}
 	}
@@ -267,6 +276,14 @@ func checkLocalHostNameWithNodeName(
 	}
 	switch len(submatches) {
 	case 0:
+		// A Pod using the host network reports the OS hostname of the node,
+		// which some providers derive from the instance rather than from the
+		// node name (e.g. ACK). Such Pods share the node network addresses,
+		// so we can still identify the node by its status addresses.
+		if nodeName, ok := nodeByLocalAddress(nodes.Items); ok {
+			log.Debug("matched local node by address", "node", nodeName, "hostName", podHostName)
+			return nodeName, nil
+		}
 		log.Warn("could not get any node name corresponding to the OBI pod."+
 			" This could involve missing or incorrect Kubernetes metadata", "hostName", podHostName)
 	case 1:
@@ -279,6 +296,45 @@ func checkLocalHostNameWithNodeName(
 	}
 
 	return podHostName, nil
+}
+
+// nodeByLocalAddress returns the name of the only node exposing one of the
+// local interface addresses in its status. Local addresses overlap with node
+// addresses only for Pods sharing the node network namespace.
+func nodeByLocalAddress(nodes []v1.Node) (string, bool) {
+	localIPs := localInterfaceIPs()
+	if len(localIPs) == 0 {
+		return "", false
+	}
+	var matches []string
+	for i := range nodes {
+		for _, address := range nodes[i].Status.Addresses {
+			if _, ok := localIPs[address.Address]; ok {
+				matches = append(matches, nodes[i].Name)
+				break
+			}
+		}
+	}
+	if len(matches) != 1 {
+		return "", false
+	}
+	return matches[0], true
+}
+
+func localInterfaceIPs() map[string]struct{} {
+	addrs, err := interfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	ips := make(map[string]struct{}, len(addrs))
+	for _, addr := range addrs {
+		ipnet, ok := addr.(*net.IPNet)
+		if !ok || ipnet == nil || ipnet.IP == nil {
+			continue
+		}
+		ips[ipnet.IP.String()] = struct{}{}
+	}
+	return ips
 }
 
 // initLocalInformers initializes an informer client that directly connects to the Node Kube API
