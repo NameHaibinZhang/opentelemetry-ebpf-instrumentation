@@ -55,8 +55,7 @@ func otelNodeFetcher(detector resource.Detector) fetcher {
 				return NodeMeta{}, nil
 			}
 		case <-ctx.Done():
-			// detectors of clouds this node does not run on are expected to time out
-			log.Debug("timed out while waiting for Cloud metadata. Ignoring")
+			log.Warn("timed out while waiting for Cloud metadata. Ignoring")
 			return NodeMeta{}, nil
 		}
 
