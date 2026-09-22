@@ -26,7 +26,16 @@ func pointDMISysVendorTo(t *testing.T, sysVendor string) {
 	})
 }
 
+// clearCloudEndpointOverrides hides the metadata endpoint variables of the host
+// so the tests exercising the DMI-based detection are deterministic.
+func clearCloudEndpointOverrides(t *testing.T) {
+	t.Helper()
+	t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", "")
+	t.Setenv("GCE_METADATA_HOST", "")
+}
+
 func TestDetectCloudProvider(t *testing.T) {
+	clearCloudEndpointOverrides(t)
 	tests := []struct {
 		name      string
 		sysVendor string
@@ -47,7 +56,29 @@ func TestDetectCloudProvider(t *testing.T) {
 	}
 }
 
+func TestDetectCloudProvider_MetadataEndpointOverrides(t *testing.T) {
+	tests := []struct {
+		name        string
+		awsEndpoint string
+		gcpEndpoint string
+		expected    cloudProvider
+	}{
+		{name: "aws endpoint overrides the DMI vendor", awsEndpoint: "http://mock-imds:80", expected: cloudProviderAWS},
+		{name: "gcp endpoint overrides the DMI vendor", gcpEndpoint: "mock-imds", expected: cloudProviderGCP},
+		{name: "empty endpoints fall back to the DMI vendor", expected: cloudProviderAlibaba},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pointDMISysVendorTo(t, "Alibaba Cloud\n")
+			t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", tt.awsEndpoint)
+			t.Setenv("GCE_METADATA_HOST", tt.gcpEndpoint)
+			assert.Equal(t, tt.expected, detectCloudProvider())
+		})
+	}
+}
+
 func TestDetectCloudProvider_NoDMI(t *testing.T) {
+	clearCloudEndpointOverrides(t)
 	previousPath := dmiSysVendorPath
 	dmiSysVendorPath = filepath.Join(t.TempDir(), "missing")
 	t.Cleanup(func() {
@@ -57,6 +88,7 @@ func TestDetectCloudProvider_NoDMI(t *testing.T) {
 }
 
 func TestCloudNodeFetchers(t *testing.T) {
+	clearCloudEndpointOverrides(t)
 	tests := []struct {
 		name      string
 		sysVendor string
@@ -78,6 +110,7 @@ func TestCloudNodeFetchers(t *testing.T) {
 }
 
 func TestCloudNodeFetchers_AlibabaCloud(t *testing.T) {
+	clearCloudEndpointOverrides(t)
 	srv := httptest.NewServer(alibabaIMDSMockHandler(t, alibabaIMDSMockValues))
 	defer srv.Close()
 	pointAlibabaIMDSTo(t, srv.URL+alibabaIMDSMockBasePath)
@@ -96,6 +129,7 @@ func TestCloudNodeFetchers_UnknownProviderRunsOthers(t *testing.T) {
 	// when the provider is unknown, the Alibaba fetcher is included among the
 	// fallback ones: point it to an unreachable endpoint so the test does not
 	// depend on the environment
+	clearCloudEndpointOverrides(t)
 	srv := httptest.NewServer(http.NotFoundHandler())
 	srv.Close()
 	pointAlibabaIMDSTo(t, srv.URL+alibabaIMDSMockBasePath)

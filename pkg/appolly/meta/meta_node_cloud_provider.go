@@ -25,10 +25,19 @@ const (
 	cloudProviderGCP     cloudProvider = "gcp"
 )
 
-// detectCloudProvider identifies the cloud provider from the SMBIOS system
-// vendor exposed by the kernel, to avoid querying metadata endpoints of other
-// clouds, whose unreachability would only delay the OBI startup.
+// detectCloudProvider identifies the cloud provider from the metadata endpoint
+// overrides declared through the environment variables honored by the detector
+// libraries, falling back to the SMBIOS system vendor exposed by the kernel.
+// Restricting the detection to a single provider avoids querying metadata
+// endpoints of other clouds, whose unreachability would only delay the OBI
+// startup.
 func detectCloudProvider() cloudProvider {
+	if os.Getenv("AWS_EC2_METADATA_SERVICE_ENDPOINT") != "" {
+		return cloudProviderAWS
+	}
+	if os.Getenv("GCE_METADATA_HOST") != "" {
+		return cloudProviderGCP
+	}
 	sysVendor, err := os.ReadFile(dmiSysVendorPath)
 	if err != nil {
 		return cloudProviderUnknown
