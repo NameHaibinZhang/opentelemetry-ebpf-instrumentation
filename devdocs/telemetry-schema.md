@@ -93,11 +93,6 @@ published, immutable schema.
 The release owner drains this list into the release notes at release prep, and leaves the
 section empty once drained.
 
-- The Prometheus `traces_host_info` metric labels the host id `host_id` instead of
-  `cloud_host_id`, matching the `host.id` the OTLP exporter reports and the `host_id`
-  that `target_info` already carried. Dashboards selecting
-  `traces_host_info{cloud_host_id=...}` must be updated. A component vendoring OBI that
-  assigns to `prom.CloudHostIDKey` keeps its own label name.
 - The OTLP span metrics (`traces.span.metrics.*`, and the `traces_spanmetrics_*` names the
   legacy feature emits over OTLP) no longer carry the `host.id` data point attribute. The
   value is unchanged on the resource, so OTLP consumers reading resource attributes lose
@@ -121,6 +116,39 @@ section empty once drained.
   `span.obi.rpc.{client,server}` become `span.obi.rpc.{grpc,onc_rpc}.{client,server}`.
   No emitted attribute changes, but a link into `site/docs/spans.md` anchored on
   one of the old ids no longer resolves.
+- The pinned `traces_ctx_v1` map is no longer populated by default. It is what an external
+  reader correlates against, so a profiler doing trace-profile correlation stops matching
+  samples to spans until `ebpf.populate_trace_context` (`OTEL_EBPF_BPF_POPULATE_TRACE_CONTEXT`)
+  is set to `true`. OBI's own readers, the log enricher and the Node.js manual span bridge,
+  turn population on by themselves and are unaffected.
+- Go channel span links may be emitted less often. Handoff correlation resolves the sender
+  from the per-goroutine protocol maps and falls back to `traces_ctx_v1`, so a handoff that
+  relied on that fallback now emits no link. Handoffs whose sender is covered by a protocol
+  map are unaffected. `ebpf.populate_trace_context: true` restores the fallback.
+
+- A span attribute OBI parses but could not determine is no longer emitted as an empty
+  string. It covers every such attribute the span exporter appends, among them
+  `server.address`, `client.address`, `service.peer.name`, `url.scheme`, `url.full`,
+  `db.namespace`, `db.collection.name`, `db.query.text`, `elasticsearch.node.name`,
+  `graphql.operation.name`, `graphql.document`, `aws.s3.key`, `aws.s3.bucket`,
+  `aws.sqs.queue.url`, `aws.request.id`, `aws.extended_request_id`, `cloud.region`,
+  `dns.question.name`, `messaging.message.id`, `messaging.client.id` on MQTT and NATS spans,
+  `messaging.destination.name` on the AWS SQS and SNS spans, `db.response.status_code`,
+  `rpc.method` on SNS, and the `gen_ai.*` model, response-id, conversation-id, provider-name
+  and message-payload attributes. A consumer selecting on the presence of one of these sees
+  it absent where it previously carried `""`.
+  Some are absent far more often than their names suggest: `elasticsearch.node.name` comes
+  from a header only Elastic Cloud sets, `aws.s3.key` is empty for every bucket-level call,
+  and `aws.extended_request_id` is empty on every SQS span.
+- `service.peer.name` disappears only where OBI resolved no name for the other end. The name
+  resolver falls back to the peer IP, so this is rare — but a deployment that disables the
+  resolver, or a component vendoring OBI that builds a pipeline without it, loses the
+  attribute on every client span outside Kubernetes.
+- Metric labels are unchanged, so a metric series still carries `server.address=""` where the
+  span now omits it. Anything joining spans to RED metrics on these keys must account for the
+  difference until the metric path follows.
+- Attributes an application sets on a manual span are untouched, including ones it
+  deliberately sets to an empty string. Resource attributes are unchanged.
 
 ## Hosting notes
 
