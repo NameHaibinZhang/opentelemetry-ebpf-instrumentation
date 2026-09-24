@@ -1071,6 +1071,9 @@ func (r *metricsReporter) otelSpanFiltered(span *request.Span) bool {
 }
 
 func exemplarFilter(filter string) func(*request.Span) bool {
+	if filter == "" {
+		filter = "always_off"
+	}
 	switch filter {
 	default:
 		mlog().Warn("invalid Prometheus' exemplar_filter value. Defaulting to always_off", "filter", filter)

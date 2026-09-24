@@ -851,7 +851,7 @@ func TestExemplarFilter(t *testing.T) {
 		expectFilterUnsampled bool
 	}{
 		{
-			name:                  "default trace based",
+			name:                  "empty defaults to always off",
 			filterConfig:          "",
 			expectFilterSampled:   false,
 			expectFilterUnsampled: false,

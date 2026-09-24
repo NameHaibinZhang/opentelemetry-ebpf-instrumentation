@@ -11,9 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/contrib/detectors/aws/ec2/v2"
-	"go.opentelemetry.io/contrib/detectors/azure/azurevm"
-	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 
@@ -86,22 +83,18 @@ func NewNodeMeta(
 	kubeInformer *kube.MetadataProvider,
 	retryCfg RetryConfig,
 ) NodeMeta {
-	return fetchEntries(ctx,
-		retryCfg,
-		// some fetchers will only retrieve the host name while others
-		// will retrieve also host attributes that will be merged
-		// in order of the priority below (the later the highest)
+	// some fetchers will only retrieve the host name while others
+	// will retrieve also host attributes that will be merged
+	// in order of the priority below (the later the highest)
+	fetchers := []fetcher{
 		linuxLocalFetcher,
 		kubeNodeFetcher(kubeInformer),
-		otelNodeFetcher(azurevm.NewResourceDetector(
-			azurevm.WithAttributeFilter(azureVMAttributeFilter),
-		)),
-		otelNodeFetcher(gcp.NewDetector()),
-		otelNodeFetcher(ec2.NewResourceDetector()),
-		func(_ context.Context) (NodeMeta, error) {
-			return NodeMeta{HostID: overrideHost}, nil
-		},
-	)
+	}
+	fetchers = append(fetchers, cloudNodeFetchers()...)
+	fetchers = append(fetchers, func(_ context.Context) (NodeMeta, error) {
+		return NodeMeta{HostID: overrideHost}, nil
+	})
+	return fetchEntries(ctx, retryCfg, fetchers...)
 }
 
 func fetchEntries(
