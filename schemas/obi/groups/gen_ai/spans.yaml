@@ -32,6 +32,8 @@ spans:
         requirement_level: required
       - ref: gen_ai.operation.name
         requirement_level: required
+      - ref: gen_ai.span.kind
+        requirement_level: required
       - ref: gen_ai.request.model
         requirement_level:
           conditionally_required: if the request named a model
@@ -164,6 +166,8 @@ spans:
         requirement_level: required
       - ref: gen_ai.operation.name
         requirement_level: required
+      - ref: gen_ai.span.kind
+        requirement_level: required
       - ref: gen_ai.request.model
         requirement_level:
           conditionally_required: if the request named a model
@@ -222,6 +226,8 @@ spans:
         requirement_level: required
       - ref: gen_ai.operation.name
         requirement_level: required
+      - ref: gen_ai.span.kind
+        requirement_level: required
       - ref: gen_ai.request.model
         requirement_level:
           conditionally_required: if the request named a model
@@ -276,6 +282,8 @@ spans:
       - ref: gen_ai.provider.name
         requirement_level: required
       - ref: gen_ai.operation.name
+        requirement_level: required
+      - ref: gen_ai.span.kind
         requirement_level: required
       - ref: gen_ai.request.model
         requirement_level:
