@@ -553,6 +553,7 @@ OBI Model Context Protocol client span.
 | `error.type` | string | `conditionally_required`: if the operation ended in an error | stable | Describes a class of error the operation ended with. | timeout; java.net.UnknownHostException; server_certificate_invalid; 500 |
 | `gen_ai.operation.name` | string | `conditionally_required`: if the operation executes a tool | development | The name of the operation being performed. | chat; embeddings; response; conversation; invoke_model; rerank; execute_tool; _OTHER |
 | `gen_ai.prompt.name` | string | `conditionally_required`: if the request named a prompt template | development | The name of the prompt that uniquely identifies it. | analyze-code |
+| `gen_ai.span.kind` | string | `conditionally_required`: if the operation executes a tool | development | Coarse classification of the GenAI span, derived from `gen_ai.operation.name` (LLM / EMBEDDING / TOOL / RETRIEVER / RERANKER). | LLM; EMBEDDING |
 | `gen_ai.tool.call.arguments` | any | `opt_in` | development | Parameters passed to the tool call. | {     "location": "San Francisco?",     "date": "2025-10-01" } |
 | `gen_ai.tool.call.result` | any | `opt_in` | development | The result returned by the tool call (if any and if execution was successful). | {   "temperature_range": {     "high": 75,     "low": 60   },   "conditions": "sunny" } |
 | `gen_ai.tool.name` | string | `conditionally_required`: if the operation executes a tool | development | Name of the tool utilized by the agent. | Flights |
@@ -585,6 +586,7 @@ OBI inbound Model Context Protocol over HTTP server span.
 | `error.type` | string | `conditionally_required`: if the operation ended in an error | stable | Describes a class of error the operation ended with. | timeout; java.net.UnknownHostException; server_certificate_invalid; 500 |
 | `gen_ai.operation.name` | string | `conditionally_required`: if the operation executes a tool | development | The name of the operation being performed. | chat; embeddings; response; conversation; invoke_model; rerank; execute_tool; _OTHER |
 | `gen_ai.prompt.name` | string | `conditionally_required`: if the request named a prompt template | development | The name of the prompt that uniquely identifies it. | analyze-code |
+| `gen_ai.span.kind` | string | `conditionally_required`: if the operation executes a tool | development | Coarse classification of the GenAI span, derived from `gen_ai.operation.name` (LLM / EMBEDDING / TOOL / RETRIEVER / RERANKER). | LLM; EMBEDDING |
 | `gen_ai.tool.call.arguments` | any | `opt_in` | development | Parameters passed to the tool call. | {     "location": "San Francisco?",     "date": "2025-10-01" } |
 | `gen_ai.tool.call.result` | any | `opt_in` | development | The result returned by the tool call (if any and if execution was successful). | {   "temperature_range": {     "high": 75,     "low": 60   },   "conditions": "sunny" } |
 | `gen_ai.tool.name` | string | `conditionally_required`: if the operation executes a tool | development | Name of the tool utilized by the agent. | Flights |
