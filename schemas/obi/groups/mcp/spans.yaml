@@ -29,6 +29,11 @@ groups:
       - ref: gen_ai.operation.name
         requirement_level:
           conditionally_required: if the operation executes a tool
+      # Emitted together with `gen_ai.operation.name` so ARMS can classify
+      # MCP tool calls; mirrors the fork-wide GenAI span-kind tagging.
+      - ref: gen_ai.span.kind
+        requirement_level:
+          conditionally_required: if the operation executes a tool
       - ref: gen_ai.tool.name
         requirement_level:
           conditionally_required: if the operation executes a tool
@@ -90,6 +95,11 @@ groups:
         requirement_level:
           recommended: if the exchange is part of a session
       - ref: gen_ai.operation.name
+        requirement_level:
+          conditionally_required: if the operation executes a tool
+      # Emitted together with `gen_ai.operation.name` so ARMS can classify
+      # MCP tool calls; mirrors the fork-wide GenAI span-kind tagging.
+      - ref: gen_ai.span.kind
         requirement_level:
           conditionally_required: if the operation executes a tool
       - ref: gen_ai.tool.name
