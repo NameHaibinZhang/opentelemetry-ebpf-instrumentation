@@ -1088,6 +1088,57 @@
       "type": "array",
       "description": "List of metric features to enable."
     },
+    "GPUConfig": {
+      "properties": {
+        "interval": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m)$",
+          "description": "Between GPU metric collection cycles. Defaults to 30s.",
+          "default": "30s",
+          "examples": [
+            "30s",
+            "5m",
+            "1ms"
+          ],
+          "x-env-var": "OTEL_EBPF_GPU_INTERVAL"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "off",
+            "on"
+          ],
+          "description": "Enables or disables GPU device metrics collection: \"auto\" (default) starts the monitor only when NVIDIA GPUs are detected, \"on\" always starts it, \"off\" never does.",
+          "default": "auto",
+          "x-env-var": "OTEL_EBPF_GPU_MODE"
+        },
+        "prometheus": {
+          "$ref": "#/$defs/GPUPrometheusConfig",
+          "description": "Allows exposing the GPU device metrics through a standalone Prometheus HTTP endpoint, in addition to the configured metrics exporter."
+        }
+      },
+      "type": "object",
+      "description": "GPUConfig configures the node-level GPU device metrics monitor (pkg/gpumon)."
+    },
+    "GPUPrometheusConfig": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Where the Prometheus endpoint serves metrics. Defaults to /metrics.",
+          "default": "/metrics",
+          "x-env-var": "OTEL_EBPF_GPU_PROMETHEUS_PATH"
+        },
+        "port": {
+          "type": "integer",
+          "description": "Where the Prometheus endpoint listens. 0 (default) means disabled.",
+          "default": 0,
+          "x-env-var": "OTEL_EBPF_GPU_PROMETHEUS_PORT"
+        }
+      },
+      "type": "object",
+      "description": "GPUPrometheusConfig configures the standalone Prometheus endpoint for the GPU device metrics."
+    },
     "GeminiConfig": {
       "properties": {
         "enabled": {
@@ -3304,6 +3355,9 @@
     },
     "filter": {
       "$ref": "#/$defs/AttributesConfig"
+    },
+    "gpu": {
+      "$ref": "#/$defs/GPUConfig"
     },
     "health_check": {
       "$ref": "#/$defs/HealthCheckConfig"

@@ -330,6 +330,7 @@ var DefaultConfig = Config{
 	},
 	NetworkFlows: DefaultNetworkConfig,
 	Stats:        DefaultStatsConfig,
+	GPU:          DefaultGPUConfig,
 	Discovery: services.DiscoveryConfig{
 		ExcludeOTelInstrumentedServices: true,
 		DefaultExcludeServices: services.RegexDefinitionCriteria{
@@ -383,6 +384,7 @@ type Config struct {
 	// NetworkFlows configuration for Network Observability feature
 	NetworkFlows NetworkConfig `yaml:"network"`
 	Stats        StatsConfig   `yaml:"stats"`
+	GPU          GPUConfig     `yaml:"gpu"`
 
 	Filters filter.AttributesConfig `yaml:"filter"`
 
@@ -837,6 +839,9 @@ func (c *Config) validate(context validationContext) error {
 	}
 	if c.DotnetRuntimeMetrics.Timeout <= 0 {
 		return ConfigError("dotnet_runtime_metrics.timeout must be greater than 0")
+	}
+	if c.GPU.Interval <= 0 {
+		return ConfigError("gpu.interval must be greater than 0")
 	}
 	if err := c.Discovery.Validate(); err != nil {
 		return ConfigError(err.Error())

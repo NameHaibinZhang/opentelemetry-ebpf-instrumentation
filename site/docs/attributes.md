@@ -50,6 +50,21 @@ Attributes carried on OBI's CUDA GPU metrics.
 | `cuda.device.uuid` | string | development | UUID of the CUDA device the call ran on, as reported by the CUDA introspection APIs. It is the bare UUID, which is the uuid column of `nvidia-smi` with its `GPU-` prefix removed. Omitted when the process never asked CUDA about the device. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
 | `cuda.memcpy.kind` | enum | development | Direction of a CUDA memory copy, mirroring the `cudaMemcpyKind` enum of the CUDA Runtime API. | MemcpyHostToHost; MemcpyHostToDevice; MemcpyDeviceToHost; MemcpyDeviceToDevice; MemcpyDefault |
 
+## `registry.obi.gpu.device`
+
+Attributes carried on OBI's GPU device-level metrics.
+
+| Attribute | Type | Stability | Description | Examples |
+| --- | --- | --- | --- | --- |
+| `gpu.mig.capable` | boolean | development | Whether the GPU supports Multi-Instance GPU (MIG) partitioning, as reported by the driver. |  |
+| `gpu.nvlink.link.id` | int | development | Index of the NVLink port (link) on the GPU, as reported by the driver. | 0; 17 |
+| `gpu.nvlink.switch.id` | string | development | Identifier of the NVSwitch a link is routed through, as reported by the driver's device tree. Present only for switch-attached links; directly attached links carry `gpu.peer.uuid` instead. | NVSwitch:0000:87:00.0 |
+| `gpu.pci.bus.id` | string | development | PCI bus address of the GPU, in domain:bus:device.function notation. | 0000:07:00.0 |
+| `gpu.pcie.aer.severity` | enum | development | Severity of a PCIe Advanced Error Reporting (AER) error, mirroring the sysfs `aer_dev_correctable` / `aer_dev_nonfatal` / `aer_dev_fatal` counter file names. | correctable; nonfatal; fatal |
+| `gpu.peer.uuid` | string | development | UUID of the GPU on the other end of a directly attached NVLink connection. Omitted when the link is routed through an NVSwitch. | d5b8b1a5-2c05-9c1e-b3b4-b9437e7ca751 |
+| `gpu.uuid` | string | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+| `ml.rank` | int | development | Rank of the process in a distributed training job, taken from the `RANK` environment variable set by the launcher (e.g. torchrun). | 3 |
+
 ## `registry.obi.http`
 
 HTTP attributes OBI emits that are not part of upstream semconv (captured request/response bodies).

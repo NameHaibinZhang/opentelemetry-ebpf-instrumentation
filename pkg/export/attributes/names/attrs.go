@@ -338,6 +338,18 @@ const (
 	CudaDeviceIndex = Name("cuda.device.index")
 	CudaDeviceUUID  = Name("cuda.device.uuid")
 	CudaDeviceModel = Name("cuda.device.model")
+
+	// GPU device-level attributes (node-level monitoring, see pkg/gpumon)
+	GPUUUID            = Name("gpu.uuid")
+	GPUPciBusID        = Name("gpu.pci.bus.id")
+	GPUMigCapable      = Name("gpu.mig.capable")
+	GPUPeerUUID        = Name("gpu.peer.uuid")
+	GPUNvlinkLinkID    = Name("gpu.nvlink.link.id")
+	GPUNvlinkSwitchID  = Name("gpu.nvlink.switch.id")
+	GPUPcieAerSeverity = Name("gpu.pcie.aer.severity")
+	HWModel            = Name("hw.model")
+	MLRank             = Name("ml.rank")
+	ProcessPID         = Name(semconv.ProcessPIDKey)
 )
 
 // JSON-RPC attributes (current semconv, replacing deprecated rpc.jsonrpc.* attributes)

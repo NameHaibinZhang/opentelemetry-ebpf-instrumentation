@@ -1,15 +1,26 @@
 # GPU monitoring
 
-OBI instruments the CUDA APIs an application uses to drive an NVIDIA GPU:
-kernel launches, memory copies, allocations, stream and event operations, and
-the introspection calls that reveal which device the work ran on. This is
-execution telemetry about the application's GPU work, not device health
-telemetry such as utilization, temperature, or power, which comes from tools
-like `nvidia-smi` or DCGM.
+OBI observes NVIDIA GPUs in two complementary ways:
+
+- **CUDA API instrumentation** (`ebpf.instrument_cuda`): uprobes on the CUDA
+  Runtime and Driver report the GPU work an application performs — kernel
+  launches, memory copies, allocations, stream and event operations — as spans
+  and `gpu.cuda.*` metrics. This is execution telemetry about the
+  application's GPU work.
+- **Device-level monitoring** (`gpu` config section): a polling monitor reads
+  the GPU inventory of the node from sysfs, procfs and `nvidia-smi`, and
+  reports `obi.gpu.*` metrics — identity, PCIe link state, NUMA affinity,
+  NVLink topology, the processes holding each GPU, and PCIe AER errors. This
+  complements the CUDA telemetry with the state of the GPUs themselves.
+
+Neither subsystem replaces device health telemetry such as utilization,
+temperature, or power, which comes from tools like `nvidia-smi` or DCGM. The
+`gpu.uuid` attribute of the device-level metrics uses the same bare UUID as
+DCGM's `UUID` label, so series from both stacks can be joined.
 
 ## Enabling
 
-GPU monitoring is off unless enabled through `ebpf.instrument_cuda`
+CUDA API instrumentation is off unless enabled through `ebpf.instrument_cuda`
 (`OTEL_EBPF_INSTRUMENT_CUDA`):
 
 | Value          | Behavior                                      |
@@ -21,6 +32,24 @@ GPU monitoring is off unless enabled through `ebpf.instrument_cuda`
 When enabled, `newCommonTracersGroup` in `pkg/appolly/discover/finder.go` adds
 the gpuevent tracer to the common tracer set. The tracer is not required: if it
 fails to load, the rest of the instrumentation still works.
+
+Device-level monitoring is configured independently through the `gpu` section:
+
+```yaml
+gpu:
+  mode: auto        # on | off | auto
+  interval: 30s
+  prometheus:
+    port: 0         # standalone Prometheus endpoint, 0 disables it
+    path: /metrics
+```
+
+In `auto` mode (the default) the monitor starts only when the GPU inventory is
+non-empty; `on` logs a warning when no GPUs are found but keeps running. The
+metrics go to the configured OTLP metrics exporter, and additionally to the
+standalone Prometheus endpoint when `gpu.prometheus.port` is set. The two
+subsystems are independent: device-level metrics are collected even when no
+instrumented application uses the GPUs.
 
 ## Where the code lives
 
@@ -225,3 +254,99 @@ and `libcuda.so.1` libraries from the stub sources in
 `internal/test/integration/components/gpu-cuda-tester/`, and
 `docker-compose-gpu.yml` forces `OTEL_EBPF_INSTRUMENT_CUDA=on` so the gpuevent
 tracer loads.
+
+## Device-level GPU metrics
+
+The `pkg/gpumon` package polls the node's GPU state on a fixed interval and
+hands a snapshot to the exporters. It does not use eBPF: everything comes from
+files and `nvidia-smi`, so it works on any kernel and in every deployment
+where the NVIDIA driver is loaded.
+
+| Piece                              | Location                                  |
+|:-----------------------------------|:------------------------------------------|
+| Snapshot types and `Reporter`      | `pkg/gpumon/snapshot.go`                  |
+| Sources (sysfs, procfs, nvidia-smi)| `pkg/gpumon/sources.go`                   |
+| Poll loop, ghosts, AER deltas, conflicts | `pkg/gpumon/agent.go`              |
+| Process identity resolution        | `pkg/gpumon/resolve.go`                   |
+| OTLP reporter                      | `pkg/export/otel/metrics_gpu.go`          |
+| Prometheus reporter                | `pkg/gpumon/prom.go`                      |
+| Config                             | `pkg/obi/gpu_cfg.go`                      |
+| Instrumenter wiring                | `setupGPUMonitor` in `pkg/instrumenter/instrumenter.go` |
+
+### Collection sources
+
+| Data                  | Source |
+|:----------------------|:-------|
+| GPU presence, UUID, model, device minor | `/proc/driver/nvidia/gpus/<bus>/information` |
+| Device node accessibility (`up`)        | `/dev/nvidia<minor>` |
+| MIG capability                          | `nvidia-smi --query-gpu=pci_bus_id,mig.mode.current` |
+| NUMA node                               | sysfs `numa_node`, falling back to matching the `nvidia-smi topo -m` CPU affinity against `/sys/devices/system/node/node*/cpulist` |
+| PCIe generation and width               | sysfs `current_link_speed` / `current_link_width` |
+| NVLink state and peers                  | `nvidia-smi -q -d NVLINK` |
+| NVLink rate                             | `nvidia-smi nvlink -gt d` (GB/s, mapped to a generation number) |
+| Compute processes                       | `nvidia-smi --query-compute-apps=pid,gpu_uuid` |
+| PCIe AER errors                         | sysfs `aer_dev_correctable`, `aer_dev_nonfatal`, `aer_dev_fatal` |
+
+The collection is best-effort: a failing source logs at debug level and the
+snapshot carries what could be read. AER counters are cumulative in sysfs, so
+the agent turns them into per-interval deltas; the first observation of a
+counter only records the baseline.
+
+### Process identity
+
+Each GPU compute process is labelled with what could be resolved:
+
+- `process.executable.name` from `/proc/<pid>/comm`;
+- `k8s.pod.name` and `k8s.job.name` from the Kubernetes metadata store, by
+  resolving the PID's container ID through the informer;
+- `ml.rank` from the `RANK` environment variable set by distributed training
+  launchers such as torchrun, kept only when it is a plain integer.
+
+Pod and job resolution requires the Kubernetes metadata to be enabled; without
+it the labels are simply omitted.
+
+### Sharing conflicts
+
+`obi.gpu.occupancy.conflict` counts GPU sharing conflicts: on every cycle in
+which a GPU is held by processes from at least two distinct workload
+identities (pod name, or PID outside Kubernetes), each involved process with
+a known pod contributes one increment. A sustained conflict therefore shows up
+as a steady rate, which is what alerts should target.
+
+### Disappearing GPUs
+
+A GPU that was present in the previous cycle and is missing from the current
+one is reported for one more cycle as a ghost: `obi.gpu.up` drops to 0 and
+only the `gpu.uuid` label is set. On the following cycle, without inventory,
+the series end: gauge series are removed and the `*_info` updowncounters are
+decremented, so exporters that support it drop the series and stale ones age
+out with their own TTL.
+
+### Metrics
+
+All metrics are `development` stability, declared in
+`schemas/obi/groups/gpu/metrics.yaml`, and labelled with `gpu.uuid` (the bare
+UUID matching DCGM's `UUID` label).
+
+| Metric                          | Instrument      | Extra attributes |
+|:--------------------------------|:----------------|:-----------------|
+| `obi.gpu.info`                  | updowncounter   | `gpu.pci.bus.id`, `hw.model`, `gpu.mig.capable` |
+| `obi.gpu.up`                    | gauge           | — |
+| `obi.gpu.numa.node`             | gauge           | — |
+| `obi.gpu.pcie.generation`       | gauge           | — |
+| `obi.gpu.pcie.width`            | gauge           | — |
+| `obi.gpu.nvlink.up`             | gauge           | `gpu.nvlink.link.id`, `gpu.peer.uuid` or `gpu.nvlink.switch.id` |
+| `obi.gpu.nvlink.rate`           | gauge           | same as `obi.gpu.nvlink.up` |
+| `obi.gpu.nvlink.width`          | gauge           | same as `obi.gpu.nvlink.up` |
+| `obi.gpu.process.info`          | updowncounter   | `process.pid`, `process.executable.name`, `k8s.pod.name`, `k8s.job.name`, `ml.rank` |
+| `obi.gpu.occupancy.conflict`    | counter         | `k8s.pod.name`, `k8s.job.name`, `ml.rank` |
+| `obi.gpu.pcie.aer.errors`       | counter         | `gpu.pcie.aer.severity`, `gpu.pci.bus.id` |
+
+The `*_info` metrics are Prometheus-style inventory meta-metrics emitted with
+value 1 for each present GPU or process. NVLink series with a direct peer
+carry `gpu.peer.uuid`; NVSwitch-routed links carry `gpu.nvlink.switch.id`
+instead. `obi.gpu.nvlink.width` is the constant 4 lanes per port of every
+NVLink generation the driver reports.
+
+The unit tests in `pkg/gpumon` and `pkg/export/otel/metrics_gpu_test.go` cover
+the parsers and the reporter against fixture files, without NVIDIA hardware.

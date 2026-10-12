@@ -9,15 +9,18 @@ import (
 	"log/slog"
 	"sync"
 	"text/template"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
+	"go.opentelemetry.io/obi/pkg/config"
 	"go.opentelemetry.io/obi/pkg/docker"
 	"go.opentelemetry.io/obi/pkg/export/attributes"
 	"go.opentelemetry.io/obi/pkg/export/connector"
 	"go.opentelemetry.io/obi/pkg/export/imetrics"
 	"go.opentelemetry.io/obi/pkg/export/otel"
 	"go.opentelemetry.io/obi/pkg/export/otel/otelcfg"
+	"go.opentelemetry.io/obi/pkg/gpumon"
 	"go.opentelemetry.io/obi/pkg/health"
 	"go.opentelemetry.io/obi/pkg/internal/appolly"
 	"go.opentelemetry.io/obi/pkg/internal/cloud"
@@ -104,6 +107,15 @@ func RunWithContextInfo(
 		})
 	}
 
+	if cfg.GPU.Mode != config.GPUMonitorModeOff {
+		g.Go(func() error {
+			if err := setupGPUMonitor(ctx, ctxInfo, cfg); err != nil {
+				return fmt.Errorf("setupGPUMonitor: %w", err)
+			}
+			return nil
+		})
+	}
+
 	if err := g.Wait(); err != nil {
 		return err
 	}
@@ -172,6 +184,65 @@ func setupStatsO11y(ctx context.Context, ctxInfo *global.ContextInfo, cfg *obi.C
 	}
 
 	return nil
+}
+
+// setupGPUMonitor runs the node-level GPU device metrics monitor until the
+// context is cancelled. In "auto" mode (the default) it is a no-op unless
+// NVIDIA GPUs are detected.
+func setupGPUMonitor(ctx context.Context, ctxInfo *global.ContextInfo, cfg *obi.Config) error {
+	sources := gpumon.NewSources()
+
+	inventory, err := sources.Inventory()
+	if err != nil || len(inventory) == 0 {
+		if cfg.GPU.Mode == config.GPUMonitorModeOn {
+			slog.Warn("GPU monitoring is enabled but no NVIDIA GPUs were detected")
+		} else {
+			slog.Debug("no NVIDIA GPUs detected, GPU monitoring disabled")
+			return nil
+		}
+	}
+
+	var resolver gpumon.ProcessResolver
+	if ctxInfo.K8sInformer.IsKubeEnabled() {
+		store, err := ctxInfo.K8sInformer.Get(ctx)
+		if err != nil {
+			return fmt.Errorf("setting up kubernetes metadata for GPU monitoring: %w", err)
+		}
+		resolver = gpumon.NewK8sResolver(store)
+	}
+
+	var reporters []gpumon.Reporter
+	if cfg.OTELMetrics.EndpointEnabled() {
+		otelReporter, err := otel.NewGPUMetricsReporter(ctx, ctxInfo, &cfg.OTELMetrics)
+		if err != nil {
+			return fmt.Errorf("setting up GPU metrics exporter: %w", err)
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			if err := otelReporter.Close(shutdownCtx); err != nil {
+				slog.Debug("shutting down GPU metrics provider", "error", err)
+			}
+		}()
+		reporters = append(reporters, otelReporter)
+	}
+
+	if cfg.GPU.Prometheus.Port != 0 {
+		promReporter := gpumon.NewPromReporter()
+		ctxInfo.Prometheus.Register(cfg.GPU.Prometheus.Port, cfg.GPU.Prometheus.Path, promReporter)
+		ctxInfo.Prometheus.StartHTTP(ctx)
+		reporters = append(reporters, promReporter)
+	}
+
+	if len(reporters) == 0 {
+		slog.Debug("GPU monitoring enabled but no metrics exporters configured, skipping")
+		return nil
+	}
+
+	slog.Info("starting GPU device metrics monitoring",
+		"interval", cfg.GPU.Interval, "gpus", len(inventory))
+	agent := gpumon.NewAgent(cfg.GPU.Interval, sources, resolver, reporters...)
+	return agent.Run(ctx)
 }
 
 func buildServiceNameTemplate(config *obi.Config) (*template.Template, error) {

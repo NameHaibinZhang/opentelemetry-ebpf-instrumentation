@@ -187,6 +187,7 @@ discovery:
 		Exec:        cfg.Exec,
 		Port:        cfg.Port,
 		ServiceName: "svc-name",
+		GPU:         DefaultGPUConfig,
 
 		ChannelBufferLen:        33,
 		ChannelSendTimeout:      10 * time.Second,

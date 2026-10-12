@@ -21,6 +21,7 @@ Generated from [`config-schema.json`](config-schema.json).
 - [`dotnet_runtime_metrics`](#dotnet-runtime-metrics)
 - [`ebpf`](#ebpf)
 - [`filter`](#filter)
+- [`gpu`](#gpu)
 - [`health_check`](#health-check)
 - [`internal_metrics`](#internal-metrics)
 - [`javaagent`](#javaagent)
@@ -402,6 +403,24 @@ AttributesConfig stores the user-provided section for filtering either Applicati
 | `filter.application` | `map[string]object` |  |  |  |  | AttributeFamilyConfig maps, for a given record, each attribute with its MatchDefinition |
 | `filter.network` | `map[string]object` |  |  |  |  | AttributeFamilyConfig maps, for a given record, each attribute with its MatchDefinition |
 | `filter.stats` | `map[string]object` |  |  |  |  | AttributeFamilyConfig maps, for a given record, each attribute with its MatchDefinition |
+
+## `gpu`
+
+GPUConfig configures the node-level GPU device metrics monitor (pkg/gpumon).
+
+| YAML Path | Type | Env Var | Default | Values | Deprecated | Description |
+|---|---|---|---|---|---|---|
+| `gpu.interval` | `duration` | `OTEL_EBPF_GPU_INTERVAL` | `30s` | `30s`, `5m`, `1ms`, etc |  | Between GPU metric collection cycles. Defaults to 30s. |
+| `gpu.mode` | `string` | `OTEL_EBPF_GPU_MODE` | `auto` | `auto`, `off`, `on` |  | Enables or disables GPU device metrics collection: "auto" (default) starts the monitor only when NVIDIA GPUs are detected, "on" always starts it, "off" never does. |
+
+### `gpu.prometheus`
+
+GPUPrometheusConfig configures the standalone Prometheus endpoint for the GPU device metrics.
+
+| YAML Path | Type | Env Var | Default | Values | Deprecated | Description |
+|---|---|---|---|---|---|---|
+| `gpu.prometheus.path` | `string` | `OTEL_EBPF_GPU_PROMETHEUS_PATH` | `/metrics` |  |  | Where the Prometheus endpoint serves metrics. Defaults to /metrics. |
+| `gpu.prometheus.port` | `integer` | `OTEL_EBPF_GPU_PROMETHEUS_PORT` | `0` |  |  | Where the Prometheus endpoint listens. 0 (default) means disabled. |
 
 ## `health_check`
 

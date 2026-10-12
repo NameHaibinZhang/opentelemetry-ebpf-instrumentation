@@ -624,6 +624,89 @@ func getDefinitions(
 				attr.CudaDeviceModel: true,
 			},
 		},
+		// Node-level GPU device metrics (pkg/gpumon): they are not tied to an
+		// instrumented application, so they don't use the appAttributes /
+		// appKubeAttributes groups and list only the attributes the emitters
+		// actually set. Conditionally-emitted attributes are enabled by
+		// default: the attribute simply doesn't appear on the datapoint when
+		// its condition is not met.
+		GPUDeviceInfo.Section: {
+			Attributes: map[attr.Name]Default{
+				attr.GPUUUID:       true,
+				attr.GPUPciBusID:   true,
+				attr.HWModel:       true,
+				attr.GPUMigCapable: true,
+			},
+		},
+		GPUUp.Section: {
+			Attributes: map[attr.Name]Default{
+				attr.GPUUUID: true,
+			},
+		},
+		GPUNumaNode.Section: {
+			Attributes: map[attr.Name]Default{
+				attr.GPUUUID: true,
+			},
+		},
+		GPUPcieGeneration.Section: {
+			Attributes: map[attr.Name]Default{
+				attr.GPUUUID: true,
+			},
+		},
+		GPUPcieWidth.Section: {
+			Attributes: map[attr.Name]Default{
+				attr.GPUUUID: true,
+			},
+		},
+		GPUOccupancyConflict.Section: {
+			Attributes: map[attr.Name]Default{
+				attr.GPUUUID:    true,
+				attr.K8sPodName: true,
+				attr.K8sJobName: true,
+				attr.MLRank:     true,
+			},
+		},
+		GPUProcessInfo.Section: {
+			Attributes: map[attr.Name]Default{
+				attr.GPUUUID:               true,
+				attr.ProcessPID:            true,
+				attr.ProcessExecutableName: true,
+				attr.K8sPodName:            true,
+				attr.K8sJobName:            true,
+				attr.MLRank:                true,
+			},
+		},
+		GPUNvlinkUp.Section: {
+			Attributes: map[attr.Name]Default{
+				attr.GPUUUID:           true,
+				attr.GPUNvlinkLinkID:   true,
+				attr.GPUPeerUUID:       true,
+				attr.GPUNvlinkSwitchID: true,
+			},
+		},
+		GPUNvlinkRate.Section: {
+			Attributes: map[attr.Name]Default{
+				attr.GPUUUID:           true,
+				attr.GPUNvlinkLinkID:   true,
+				attr.GPUPeerUUID:       true,
+				attr.GPUNvlinkSwitchID: true,
+			},
+		},
+		GPUNvlinkWidth.Section: {
+			Attributes: map[attr.Name]Default{
+				attr.GPUUUID:           true,
+				attr.GPUNvlinkLinkID:   true,
+				attr.GPUPeerUUID:       true,
+				attr.GPUNvlinkSwitchID: true,
+			},
+		},
+		GPUPcieAerErrors.Section: {
+			Attributes: map[attr.Name]Default{
+				attr.GPUUUID:            true,
+				attr.GPUPcieAerSeverity: true,
+				attr.GPUPciBusID:        true,
+			},
+		},
 		DNSLookupDuration.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{

@@ -248,6 +248,61 @@ var (
 		Unit:    "By",
 		Type:    InstrumentCounter,
 	})
+	GPUDeviceInfo = metric(Name{
+		Section: "obi.gpu.info",
+		OTEL:    "obi.gpu.info",
+		Type:    InstrumentUpDownCounter,
+	})
+	GPUUp = metric(Name{
+		Section: "obi.gpu.up",
+		OTEL:    "obi.gpu.up",
+		Type:    InstrumentGauge,
+	})
+	GPUNumaNode = metric(Name{
+		Section: "obi.gpu.numa.node",
+		OTEL:    "obi.gpu.numa.node",
+		Type:    InstrumentGauge,
+	})
+	GPUPcieGeneration = metric(Name{
+		Section: "obi.gpu.pcie.generation",
+		OTEL:    "obi.gpu.pcie.generation",
+		Type:    InstrumentGauge,
+	})
+	GPUPcieWidth = metric(Name{
+		Section: "obi.gpu.pcie.width",
+		OTEL:    "obi.gpu.pcie.width",
+		Type:    InstrumentGauge,
+	})
+	GPUOccupancyConflict = metric(Name{
+		Section: "obi.gpu.occupancy.conflict",
+		OTEL:    "obi.gpu.occupancy.conflict",
+		Type:    InstrumentCounter,
+	})
+	GPUProcessInfo = metric(Name{
+		Section: "obi.gpu.process.info",
+		OTEL:    "obi.gpu.process.info",
+		Type:    InstrumentUpDownCounter,
+	})
+	GPUNvlinkUp = metric(Name{
+		Section: "obi.gpu.nvlink.up",
+		OTEL:    "obi.gpu.nvlink.up",
+		Type:    InstrumentGauge,
+	})
+	GPUNvlinkRate = metric(Name{
+		Section: "obi.gpu.nvlink.rate",
+		OTEL:    "obi.gpu.nvlink.rate",
+		Type:    InstrumentGauge,
+	})
+	GPUNvlinkWidth = metric(Name{
+		Section: "obi.gpu.nvlink.width",
+		OTEL:    "obi.gpu.nvlink.width",
+		Type:    InstrumentGauge,
+	})
+	GPUPcieAerErrors = metric(Name{
+		Section: "obi.gpu.pcie.aer.errors",
+		OTEL:    "obi.gpu.pcie.aer.errors",
+		Type:    InstrumentCounter,
+	})
 	DNSLookupDuration = metric(Name{
 		Section: "dns.lookup.duration",
 		OTEL:    "dns.lookup.duration",

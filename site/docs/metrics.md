@@ -1063,6 +1063,160 @@ Length of the groups of traces flushed from the eBPF tracer to the next pipeline
 
 No attributes.
 
+## `obi.gpu.info`
+
+GPU inventory meta-metric, emitted with value 1 for each GPU present on the node, in the style of Prometheus `*_info` metrics. Carries the static identity of the GPU: PCI address, model and MIG capability.
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| updowncounter | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `gpu.mig.capable` | boolean | `recommended`: if MIG capability could be determined | development | Whether the GPU supports Multi-Instance GPU (MIG) partitioning, as reported by the driver. |  |
+| `gpu.pci.bus.id` | string | `recommended` | development | PCI bus address of the GPU, in domain:bus:device.function notation. | 0000:07:00.0 |
+| `gpu.uuid` | string | `required` | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+| `hw.model` | string | `recommended` | development | Descriptive model name of the hardware component | PERC H740P; Intel(R) Core(TM) i7-10700K; Dell XPS 15 Battery |
+
+## `obi.gpu.numa.node`
+
+NUMA node the GPU is attached to, as the node index. Read from the sysfs numa_node attribute of the GPU's PCI device; when that is unknown, the GPU's CPU affinity from nvidia-smi topology output is matched against the CPU lists of the system NUMA nodes. Not reported when the node cannot be determined.
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| gauge | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `gpu.uuid` | string | `required` | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+
+## `obi.gpu.nvlink.rate`
+
+NVLink generation (rate class) of the GPU's NVLink ports, derived from the per-link data rate reported by nvidia-smi (e.g. 4 for NVLink Gen 4). Reported as the generation number rather than GT/s; the per-generation bitrate table is not stable across architectures. Zero when the rate is unknown.
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| gauge | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `gpu.nvlink.link.id` | int | `required` | development | Index of the NVLink port (link) on the GPU, as reported by the driver. | 0; 17 |
+| `gpu.nvlink.switch.id` | string | `recommended`: if the link is routed through an NVSwitch | development | Identifier of the NVSwitch a link is routed through, as reported by the driver's device tree. Present only for switch-attached links; directly attached links carry `gpu.peer.uuid` instead. | NVSwitch:0000:87:00.0 |
+| `gpu.peer.uuid` | string | `conditionally_required`: if the link is directly attached to a peer GPU | development | UUID of the GPU on the other end of a directly attached NVLink connection. Omitted when the link is routed through an NVSwitch. | d5b8b1a5-2c05-9c1e-b3b4-b9437e7ca751 |
+| `gpu.uuid` | string | `required` | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+
+## `obi.gpu.nvlink.up`
+
+NVLink port state: 1 when the link is active, 0 when it is inactive. Directly attached links carry the remote GPU's UUID; links routed through an NVSwitch carry the switch identifier instead.
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| gauge | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `gpu.nvlink.link.id` | int | `required` | development | Index of the NVLink port (link) on the GPU, as reported by the driver. | 0; 17 |
+| `gpu.nvlink.switch.id` | string | `recommended`: if the link is routed through an NVSwitch | development | Identifier of the NVSwitch a link is routed through, as reported by the driver's device tree. Present only for switch-attached links; directly attached links carry `gpu.peer.uuid` instead. | NVSwitch:0000:87:00.0 |
+| `gpu.peer.uuid` | string | `conditionally_required`: if the link is directly attached to a peer GPU | development | UUID of the GPU on the other end of a directly attached NVLink connection. Omitted when the link is routed through an NVSwitch. | d5b8b1a5-2c05-9c1e-b3b4-b9437e7ca751 |
+| `gpu.uuid` | string | `required` | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+
+## `obi.gpu.nvlink.width`
+
+Number of lanes per NVLink port. Every NVLink generation the driver reports carries 4 lanes per port, so the value is constant; it is exposed for symmetry with the NVLink rate and up metrics.
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| gauge | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `gpu.nvlink.link.id` | int | `required` | development | Index of the NVLink port (link) on the GPU, as reported by the driver. | 0; 17 |
+| `gpu.nvlink.switch.id` | string | `recommended`: if the link is routed through an NVSwitch | development | Identifier of the NVSwitch a link is routed through, as reported by the driver's device tree. Present only for switch-attached links; directly attached links carry `gpu.peer.uuid` instead. | NVSwitch:0000:87:00.0 |
+| `gpu.peer.uuid` | string | `conditionally_required`: if the link is directly attached to a peer GPU | development | UUID of the GPU on the other end of a directly attached NVLink connection. Omitted when the link is routed through an NVSwitch. | d5b8b1a5-2c05-9c1e-b3b4-b9437e7ca751 |
+| `gpu.uuid` | string | `required` | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+
+## `obi.gpu.occupancy.conflict`
+
+GPU sharing conflicts. Incremented by one on every collection cycle in which the pod still shares a GPU with at least one other distinct pod, so a sustained conflict shows up as a steady rate. The process set per GPU comes from the GPU's compute process list; pods are resolved from the process IDs.
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| counter | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `gpu.uuid` | string | `required` | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+| `k8s.job.name` | string | `recommended`: if the pod's owner chain includes a Job | release_candidate | The name of the Job. | opentelemetry |
+| `k8s.pod.name` | string | `required` | release_candidate | The name of the Pod. | opentelemetry-pod-autoconf |
+| `ml.rank` | int | `recommended`: if the process exports a RANK environment variable | development | Rank of the process in a distributed training job, taken from the `RANK` environment variable set by the launcher (e.g. torchrun). | 3 |
+
+## `obi.gpu.pcie.aer.errors`
+
+PCIe Advanced Error Reporting (AER) errors observed on the GPU's PCI device, by severity, from the cumulative sysfs aer_dev_* counters.
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| counter | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `gpu.pci.bus.id` | string | `recommended` | development | PCI bus address of the GPU, in domain:bus:device.function notation. | 0000:07:00.0 |
+| `gpu.pcie.aer.severity` | enum | `required` | development | Severity of a PCIe Advanced Error Reporting (AER) error, mirroring the sysfs `aer_dev_correctable` / `aer_dev_nonfatal` / `aer_dev_fatal` counter file names. | correctable; nonfatal; fatal |
+| `gpu.uuid` | string | `required` | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+
+## `obi.gpu.pcie.generation`
+
+Currently negotiated PCIe link generation of the GPU's PCI device (1 = 2.5 GT/s up to 7 = 128 GT/s), from the sysfs current_link_speed attribute. Comparable to DCGM's DCGM_FI_DEV_PCIE_LINK_GEN.
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| gauge | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `gpu.uuid` | string | `required` | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+
+## `obi.gpu.pcie.width`
+
+Number of lanes of the GPU's currently negotiated PCIe link, from the sysfs current_link_width attribute. Comparable to DCGM's DCGM_FI_DEV_PCIE_LINK_WIDTH.
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| gauge | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `gpu.uuid` | string | `required` | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+
+## `obi.gpu.process.info`
+
+GPU compute process inventory, emitted with value 1 for each process currently holding the GPU, in the style of Prometheus `*_info` metrics. Carries the pod / job / rank identity resolved from the process.
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| updowncounter | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `gpu.uuid` | string | `required` | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+| `k8s.job.name` | string | `recommended`: if the pod's owner chain includes a Job | release_candidate | The name of the Job. | opentelemetry |
+| `k8s.pod.name` | string | `recommended`: if the process belongs to a Kubernetes pod | release_candidate | The name of the Pod. | opentelemetry-pod-autoconf |
+| `ml.rank` | int | `recommended`: if the process exports a RANK environment variable | development | Rank of the process in a distributed training job, taken from the `RANK` environment variable set by the launcher (e.g. torchrun). | 3 |
+| `process.executable.name` | string | `recommended`: if the executable name could be resolved | development | The name of the process executable. On Linux based systems, this SHOULD be set to the base name of the target of `/proc/[pid]/exe`. On Windows, this SHOULD be set to the base name of `GetProcessImageFileNameW`. | otelcol |
+| `process.pid` | int | `required` | development | Process identifier (PID). | 1234 |
+
+## `obi.gpu.up`
+
+1 if the GPU is present and its device nodes are accessible, 0 if it has gone away since it was last observed. Presence cross-checks /proc/driver/nvidia/gpus against the /dev/nvidia* device nodes.
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| gauge | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `gpu.uuid` | string | `required` | development | UUID of the physical GPU on the host, as the bare UUID reported by the NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM carries in its `UUID` label so series join across telemetry stacks. | bed26f36-a0eb-994e-a0a6-a8437e7ca751 |
+
 ## `obi.instrumentation.errors`
 
 Total number of instrumentation errors, by process name and error type.

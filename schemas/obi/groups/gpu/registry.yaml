@@ -50,6 +50,80 @@ attributes:
       about the device.
     examples: ["NVIDIA H20-3e"]
 
+  # --- GPU device-level attributes -----------------------------------------
+  - key: gpu.uuid
+    type: string
+    stability: development
+    brief: >
+      UUID of the physical GPU on the host, as the bare UUID reported by the
+      NVIDIA driver (the `GPU-` prefix removed), matching the value DCGM
+      carries in its `UUID` label so series join across telemetry stacks.
+    examples: ["bed26f36-a0eb-994e-a0a6-a8437e7ca751"]
+
+  - key: gpu.pci.bus.id
+    type: string
+    stability: development
+    brief: >
+      PCI bus address of the GPU, in domain:bus:device.function notation.
+    examples: ["0000:07:00.0"]
+
+  - key: gpu.mig.capable
+    type: boolean
+    stability: development
+    brief: >
+      Whether the GPU supports Multi-Instance GPU (MIG) partitioning, as
+      reported by the driver.
+
+  - key: gpu.peer.uuid
+    type: string
+    stability: development
+    brief: >
+      UUID of the GPU on the other end of a directly attached NVLink
+      connection. Omitted when the link is routed through an NVSwitch.
+    examples: ["d5b8b1a5-2c05-9c1e-b3b4-b9437e7ca751"]
+
+  - key: gpu.nvlink.link.id
+    type: int
+    stability: development
+    brief: >
+      Index of the NVLink port (link) on the GPU, as reported by the driver.
+    examples: [0, 17]
+
+  - key: gpu.nvlink.switch.id
+    type: string
+    stability: development
+    brief: >
+      Identifier of the NVSwitch a link is routed through, as reported by the
+      driver's device tree. Present only for switch-attached links; directly
+      attached links carry `gpu.peer.uuid` instead.
+    examples: ["NVSwitch:0000:87:00.0"]
+
+  - key: gpu.pcie.aer.severity
+    type:
+      members:
+        - id: correctable
+          value: correctable
+          stability: development
+        - id: nonfatal
+          value: nonfatal
+          stability: development
+        - id: fatal
+          value: fatal
+          stability: development
+    stability: development
+    brief: >
+      Severity of a PCIe Advanced Error Reporting (AER) error, mirroring the
+      sysfs `aer_dev_correctable` / `aer_dev_nonfatal` / `aer_dev_fatal`
+      counter file names.
+
+  - key: ml.rank
+    type: int
+    stability: development
+    brief: >
+      Rank of the process in a distributed training job, taken from the
+      `RANK` environment variable set by the launcher (e.g. torchrun).
+    examples: [3]
+
 attribute_groups:
   # CUDA GPU telemetry OBI emits from its gpuevent uprobes (enabled via
   # `instrument_cuda`). The metric names, units and instruments mirror the
@@ -66,3 +140,25 @@ attribute_groups:
       - ref: cuda.device.index
       - ref: cuda.device.uuid
       - ref: cuda.device.model
+
+  # GPU device-level observations OBI emits from node state (nvidia-smi,
+  # sysfs, /proc/driver/nvidia), enabled via the GPU device monitoring
+  # configuration. Distinct from registry.obi.gpu above, which covers the
+  # CUDA activity of instrumented applications. The metric names, units and
+  # instruments mirror the emitters in pkg/export/otel/metrics_gpu.go and
+  # pkg/export/prom/; the attributes mirror the constants in
+  # pkg/export/attributes.
+  - id: registry.obi.gpu.device
+    visibility: public
+    brief: >
+      Attributes carried on OBI's GPU device-level metrics.
+    stability: development
+    attributes:
+      - ref: gpu.uuid
+      - ref: gpu.pci.bus.id
+      - ref: gpu.mig.capable
+      - ref: gpu.peer.uuid
+      - ref: gpu.nvlink.link.id
+      - ref: gpu.nvlink.switch.id
+      - ref: gpu.pcie.aer.severity
+      - ref: ml.rank
