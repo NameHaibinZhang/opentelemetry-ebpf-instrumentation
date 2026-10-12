@@ -134,7 +134,7 @@ func (s *Sources) migCapableByBusID() map[string]bool {
 		return nil
 	}
 	capable := map[string]bool{}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		fields := strings.Split(line, ",")
 		if len(fields) != 2 {
 			continue
@@ -181,7 +181,7 @@ func (s *Sources) gpuIndexesByBusID() map[string]string {
 		return nil
 	}
 	indexes := map[string]string{}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		fields := strings.Split(line, ",")
 		if len(fields) != 2 {
 			continue
@@ -201,7 +201,7 @@ func (s *Sources) topoCPUAffinities() map[string]string {
 	}
 	affinities := map[string]string{}
 	affinityCol := -1
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		cols := splitColumns(line)
 		if len(cols) == 0 {
 			continue
@@ -378,7 +378,7 @@ func parseNVLINK(out string, uuidByBus map[string]string) []NVLink {
 		inLink = false
 	}
 
-	for _, rawLine := range strings.Split(out, "\n") {
+	for rawLine := range strings.SplitSeq(out, "\n") {
 		line := strings.TrimSpace(rawLine)
 		if line == "" {
 			continue
@@ -445,7 +445,7 @@ func (s *Sources) fillNvlinkRates(links []NVLink) {
 	}
 	rates := map[string]map[int]int{}
 	var gpuUUID string
-	for _, rawLine := range strings.Split(out, "\n") {
+	for rawLine := range strings.SplitSeq(out, "\n") {
 		line := strings.TrimSpace(rawLine)
 		if uuid, ok := nvlinkRateGPUUUID(line); ok {
 			gpuUUID = uuid
@@ -545,7 +545,7 @@ func (s *Sources) Processes() []GPUProcess {
 		return nil
 	}
 	var processes []GPUProcess
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		fields := strings.Split(line, ",")
 		if len(fields) != 2 {
 			continue
@@ -587,7 +587,7 @@ func readKeyValues(path string) map[string]string {
 		return nil
 	}
 	fields := map[string]string{}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if key, value, ok := splitKeyValue(line); ok {
 			fields[key] = value
 		}
@@ -596,11 +596,11 @@ func readKeyValues(path string) map[string]string {
 }
 
 func splitKeyValue(line string) (key, value string, ok bool) {
-	idx := strings.Index(line, ":")
-	if idx < 0 {
+	before, after, ok := strings.Cut(line, ":")
+	if !ok {
 		return "", "", false
 	}
-	return strings.TrimSpace(line[:idx]), strings.TrimSpace(line[idx+1:]), true
+	return strings.TrimSpace(before), strings.TrimSpace(after), true
 }
 
 func readIntFile(path string) (int64, error) {
@@ -633,7 +633,7 @@ func splitColumns(line string) []string {
 // parseCPUList parses a CPU list such as "0-3,8,10-12" into a CPU set.
 func parseCPUList(list string) map[int]struct{} {
 	cpus := map[int]struct{}{}
-	for _, token := range strings.Split(strings.TrimSpace(list), ",") {
+	for token := range strings.SplitSeq(strings.TrimSpace(list), ",") {
 		token = strings.TrimSpace(token)
 		if token == "" {
 			continue

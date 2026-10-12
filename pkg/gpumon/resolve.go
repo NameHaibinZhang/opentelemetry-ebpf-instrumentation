@@ -84,7 +84,7 @@ func (r *processResolver) rank(pid int) string {
 	if err != nil {
 		return ""
 	}
-	for _, entry := range strings.Split(string(data), "\x00") {
+	for entry := range strings.SplitSeq(string(data), "\x00") {
 		value, ok := strings.CutPrefix(entry, "RANK=")
 		if !ok {
 			continue

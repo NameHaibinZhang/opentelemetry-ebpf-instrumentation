@@ -293,7 +293,7 @@ func TestInventoryNoDriver(t *testing.T) {
 
 	devices, err := s.Inventory()
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Empty(t, devices)
 }
 

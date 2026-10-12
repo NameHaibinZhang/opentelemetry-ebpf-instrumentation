@@ -161,17 +161,17 @@ func TestPromReporterValues(t *testing.T) {
 	reporter, _ := newPromTestSetup(t)
 	reporter.Report(fullSnapshot())
 
-	assert.Equal(t, 1.0, testutil.ToFloat64(reporter.up.WithLabelValues("aaa")))
-	assert.Equal(t, 1.0, testutil.ToFloat64(reporter.info.WithLabelValues("aaa", "0000:0b:00.0", "NVIDIA A100", "true")))
-	assert.Equal(t, 0.0, testutil.ToFloat64(reporter.numa.WithLabelValues("aaa")))
-	assert.Equal(t, 4.0, testutil.ToFloat64(reporter.pcieGeneration.WithLabelValues("aaa")))
-	assert.Equal(t, 16.0, testutil.ToFloat64(reporter.pcieWidth.WithLabelValues("aaa")))
-	assert.Equal(t, 1.0, testutil.ToFloat64(reporter.nvlinkUp.WithLabelValues("aaa", "1", "bbb", "")))
-	assert.Equal(t, 4.0, testutil.ToFloat64(reporter.nvlinkRate.WithLabelValues("aaa", "1", "bbb", "")))
-	assert.Equal(t, float64(nvlinkWidthLanes), testutil.ToFloat64(reporter.nvlinkWidth.WithLabelValues("aaa", "1", "bbb", "")))
-	assert.Equal(t, 1.0, testutil.ToFloat64(reporter.processInfo.WithLabelValues("aaa", "1234", "python", "pod-a", "job-a", "0")))
-	assert.Equal(t, 1.0, testutil.ToFloat64(reporter.conflicts.WithLabelValues("aaa", "pod-a", "", "0")))
-	assert.Equal(t, 2.0, testutil.ToFloat64(reporter.aer.WithLabelValues("aaa", "correctable", "0000:0b:00.0")))
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.up.WithLabelValues("aaa")), 1e-9)
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.info.WithLabelValues("aaa", "0000:0b:00.0", "NVIDIA A100", "true")), 1e-9)
+	assert.InDelta(t, 0.0, testutil.ToFloat64(reporter.numa.WithLabelValues("aaa")), 1e-9)
+	assert.InDelta(t, 4.0, testutil.ToFloat64(reporter.pcieGeneration.WithLabelValues("aaa")), 1e-9)
+	assert.InDelta(t, 16.0, testutil.ToFloat64(reporter.pcieWidth.WithLabelValues("aaa")), 1e-9)
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.nvlinkUp.WithLabelValues("aaa", "1", "bbb", "")), 1e-9)
+	assert.InDelta(t, 4.0, testutil.ToFloat64(reporter.nvlinkRate.WithLabelValues("aaa", "1", "bbb", "")), 1e-9)
+	assert.InDelta(t, float64(nvlinkWidthLanes), testutil.ToFloat64(reporter.nvlinkWidth.WithLabelValues("aaa", "1", "bbb", "")), 1e-9)
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.processInfo.WithLabelValues("aaa", "1234", "python", "pod-a", "job-a", "0")), 1e-9)
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.conflicts.WithLabelValues("aaa", "pod-a", "", "0")), 1e-9)
+	assert.InDelta(t, 2.0, testutil.ToFloat64(reporter.aer.WithLabelValues("aaa", "correctable", "0000:0b:00.0")), 1e-9)
 }
 
 func TestPromReporterGhostDeviceOnlyReportsUp(t *testing.T) {
@@ -180,7 +180,7 @@ func TestPromReporterGhostDeviceOnlyReportsUp(t *testing.T) {
 
 	families := gatherFamilies(t, registry)
 	assert.ElementsMatch(t, []string{attributes.GPUUp.Prom}, familyNames(families))
-	assert.Equal(t, 0.0, testutil.ToFloat64(reporter.up.WithLabelValues("ghost")))
+	assert.InDelta(t, 0.0, testutil.ToFloat64(reporter.up.WithLabelValues("ghost")), 1e-9)
 }
 
 func TestPromReporterWipesGaugeSeriesBetweenCycles(t *testing.T) {
@@ -191,7 +191,7 @@ func TestPromReporterWipesGaugeSeriesBetweenCycles(t *testing.T) {
 		UUID: "bbb", BusID: "0000:1b:00.0", Model: "NVIDIA H100", Up: true, NumaNode: 1,
 	})
 	reporter.Report(two)
-	assert.Equal(t, 1.0, testutil.ToFloat64(reporter.info.WithLabelValues("bbb", "0000:1b:00.0", "NVIDIA H100", "false")))
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.info.WithLabelValues("bbb", "0000:1b:00.0", "NVIDIA H100", "false")), 1e-9)
 
 	reporter.Report(fullSnapshot())
 
@@ -207,6 +207,6 @@ func TestPromReporterCountersAccumulateAcrossCycles(t *testing.T) {
 	reporter.Report(fullSnapshot())
 	reporter.Report(fullSnapshot())
 
-	assert.Equal(t, 2.0, testutil.ToFloat64(reporter.conflicts.WithLabelValues("aaa", "pod-a", "", "0")))
-	assert.Equal(t, 4.0, testutil.ToFloat64(reporter.aer.WithLabelValues("aaa", "correctable", "0000:0b:00.0")))
+	assert.InDelta(t, 2.0, testutil.ToFloat64(reporter.conflicts.WithLabelValues("aaa", "pod-a", "", "0")), 1e-9)
+	assert.InDelta(t, 4.0, testutil.ToFloat64(reporter.aer.WithLabelValues("aaa", "correctable", "0000:0b:00.0")), 1e-9)
 }

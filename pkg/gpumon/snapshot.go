@@ -63,8 +63,8 @@ type ProcessIdentity struct {
 
 // GPUProcess is a process using a GPU through CUDA or MIG.
 type GPUProcess struct {
-	GPUUUID string
-	PID     int
+	GPUUUID  string
+	PID      int
 	Identity ProcessIdentity
 }
 
