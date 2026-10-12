@@ -279,11 +279,11 @@ where the NVIDIA driver is loaded.
 |:----------------------|:-------|
 | GPU presence, UUID, model, device minor | `/proc/driver/nvidia/gpus/<bus>/information` |
 | Device node accessibility (`up`)        | `/dev/nvidia<minor>` |
-| MIG capability                          | `nvidia-smi --query-gpu=pci_bus_id,mig.mode.current` |
+| MIG capability                          | `nvidia-smi --query-gpu=pci.bus_id,mig.mode.current` |
 | NUMA node                               | sysfs `numa_node`, falling back to matching the `nvidia-smi topo -m` CPU affinity against `/sys/devices/system/node/node*/cpulist` |
 | PCIe generation and width               | sysfs `current_link_speed` / `current_link_width` |
-| NVLink state and peers                  | `nvidia-smi -q -d NVLINK` |
-| NVLink rate                             | `nvidia-smi nvlink -gt d` (GB/s, mapped to a generation number) |
+| NVLink state and rate                   | `nvidia-smi nvlink -s` (rate in GB/s, mapped to a generation number) |
+| NVLink peers                            | `nvidia-smi nvlink -R` (remote PCI bus id, resolved to an inventory UUID) |
 | Compute processes                       | `nvidia-smi --query-compute-apps=pid,gpu_uuid` |
 | PCIe AER errors                         | sysfs `aer_dev_correctable`, `aer_dev_nonfatal`, `aer_dev_fatal` |
 

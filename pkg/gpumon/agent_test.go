@@ -153,8 +153,7 @@ func layoutGPUs(t *testing.T, s *Sources, uuids ...string) {
 
 func TestGhostDeviceLifecycle(t *testing.T) {
 	s := newTestSources(t, fakeSMI(t, map[string]string{
-		"-q -d NVLINK": "",
-		"nvlink -gt d": "",
+		"nvlink -s": "",
 		"--query-compute-apps=pid,gpu_uuid --format=csv,noheader": "",
 	}))
 	layoutGPUs(t, s, "aaa", "bbb")
@@ -182,8 +181,7 @@ func TestGhostDeviceLifecycle(t *testing.T) {
 
 func TestRunStopsOnContextCancel(t *testing.T) {
 	s := newTestSources(t, fakeSMI(t, map[string]string{
-		"-q -d NVLINK": "",
-		"nvlink -gt d": "",
+		"nvlink -s": "",
 		"--query-compute-apps=pid,gpu_uuid --format=csv,noheader": "",
 	}))
 	layoutGPUs(t, s, "aaa")

@@ -128,7 +128,7 @@ func missingNuma(devices []Device) bool {
 // migCapableByBusID queries the MIG mode of each GPU. GPUs missing from the
 // answer, or a failed query, are reported as not capable.
 func (s *Sources) migCapableByBusID() map[string]bool {
-	out, err := s.SMI("--query-gpu=pci_bus_id,mig.mode.current", "--format=csv,noheader")
+	out, err := s.SMI("--query-gpu=pci.bus_id,mig.mode.current", "--format=csv,noheader")
 	if err != nil {
 		s.log().Debug("MIG mode query failed; assuming GPUs are not MIG capable", "error", err)
 		return nil
@@ -175,7 +175,7 @@ func (s *Sources) fillNumaFromTopology(devices []Device) {
 
 // gpuIndexesByBusID maps each GPU bus address to its nvidia-smi index.
 func (s *Sources) gpuIndexesByBusID() map[string]string {
-	out, err := s.SMI("--query-gpu=index,pci_bus_id", "--format=csv,noheader")
+	out, err := s.SMI("--query-gpu=index,pci.bus_id", "--format=csv,noheader")
 	if err != nil {
 		s.log().Debug("GPU index query failed", "error", err)
 		return nil
@@ -326,21 +326,25 @@ func pcieGenerationFromSpeed(speed string) int {
 	return 0
 }
 
-// NVLinks returns the NVLink state of the given devices. Remote GPUs are
-// resolved to their UUID through the inventory; NVSwitch remotes keep the
-// "NVSwitch:<bus id>" identifier.
+// NVLinks returns the NVLink state of the given devices. Link state and
+// transfer rate come from "nvidia-smi nvlink -s"; remote peers are resolved
+// from "nvidia-smi nvlink -R" through the inventory, and NVSwitch remotes
+// keep the "NVSwitch:<bus id>" identifier.
 func (s *Sources) NVLinks(devices []Device) []NVLink {
-	out, err := s.SMI("-q", "-d", "NVLINK")
+	status, err := s.SMI("nvlink", "-s")
 	if err != nil {
-		s.log().Debug("NVLink query failed", "error", err)
+		s.log().Debug("NVLink status query failed", "error", err)
+		return nil
+	}
+	links := parseNvlinkStatus(status)
+	if len(links) == 0 {
 		return nil
 	}
 	uuidByBus := make(map[string]string, len(devices))
 	for _, d := range devices {
 		uuidByBus[d.BusID] = d.UUID
 	}
-	links := parseNVLINK(out, uuidByBus)
-	s.fillNvlinkRates(links)
+	s.fillNvlinkRemotes(links, uuidByBus)
 	for i := range links {
 		links[i].Width = nvlinkWidthLanes
 	}
@@ -348,36 +352,17 @@ func (s *Sources) NVLinks(devices []Device) []NVLink {
 }
 
 var (
-	nvlinkGPUHeaderRe  = regexp.MustCompile(`^GPU\s+\S+\s*(?:\(UUID:\s*(.+?)\s*\))?$`)
-	nvlinkLegacyLinkRe = regexp.MustCompile(`^Link\s+(\d+)\s*:\s*(Active|Inactive)$`)
-	nvlinkLinkHeaderRe = regexp.MustCompile(`^Link\s+(\d+)$`)
+	nvlinkGPUHeaderRe = regexp.MustCompile(`^GPU\s+\d+\s*:\s*.+?\(UUID:\s*(.+?)\s*\)\s*$`)
+	nvlinkStatusRe    = regexp.MustCompile(`^Link\s+(\d+)\s*:\s*(?:([\d.]+)\s*GB/s|<inactive>)$`)
+	nvlinkRemoteRe    = regexp.MustCompile(`^Link\s+(\d+)\s*:\s*Remote Device\s+(.+):\s*(?:Link\s+)?(\d+)$`)
 )
 
-// parseNVLINK understands both the current "Link N" block format (with
-// Active/Remote Device Type/Remote Device PCI Bus ID fields) and the legacy
-// single-line "Link N : Active" format.
-func parseNVLINK(out string, uuidByBus map[string]string) []NVLink {
+// parseNvlinkStatus parses the "nvidia-smi nvlink -s" output, which lists each
+// link of every GPU as either "Link N: <rate> GB/s" (active) or
+// "Link N: <inactive>". The reported rate is mapped to a link generation.
+func parseNvlinkStatus(out string) []NVLink {
 	var links []NVLink
 	var gpuUUID string
-	var link NVLink
-	var remoteType, remoteBus string
-	inLink := false
-
-	flush := func() {
-		if !inLink {
-			return
-		}
-		if remoteType != "" && remoteBus != "" {
-			if strings.Contains(remoteType, "Switch") {
-				link.SwitchID = "NVSwitch:" + remoteBus
-			} else {
-				link.PeerUUID = uuidByBus[remoteBus]
-			}
-		}
-		links = append(links, link)
-		inLink = false
-	}
-
 	for rawLine := range strings.SplitSeq(out, "\n") {
 		line := strings.TrimSpace(rawLine)
 		if line == "" {
@@ -385,116 +370,72 @@ func parseNVLINK(out string, uuidByBus map[string]string) []NVLink {
 		}
 
 		if matches := nvlinkGPUHeaderRe.FindStringSubmatch(line); matches != nil && strings.HasPrefix(line, "GPU ") {
-			flush()
-			uuid := stripGPUPrefix(matches[1])
-			if uuid == "" {
-				busAndRest := strings.TrimPrefix(line, "GPU ")
-				busID := normalizeBDF(strings.Fields(busAndRest)[0])
-				uuid = uuidByBus[busID]
-			}
-			gpuUUID = uuid
+			gpuUUID = stripGPUPrefix(matches[1])
 			continue
 		}
-		if matches := nvlinkLegacyLinkRe.FindStringSubmatch(line); matches != nil {
-			flush()
-			linkID, _ := strconv.Atoi(matches[1])
-			links = append(links, NVLink{
-				GPUUUID: gpuUUID,
-				LinkID:  linkID,
-				Active:  matches[2] == "Active",
-			})
+		matches := nvlinkStatusRe.FindStringSubmatch(line)
+		if matches == nil {
 			continue
 		}
-		if matches := nvlinkLinkHeaderRe.FindStringSubmatch(line); matches != nil {
-			flush()
-			linkID, _ := strconv.Atoi(matches[1])
-			link = NVLink{GPUUUID: gpuUUID, LinkID: linkID}
-			remoteType, remoteBus = "", ""
-			inLink = true
+		linkID, err := strconv.Atoi(matches[1])
+		if err != nil {
 			continue
 		}
-
-		if !inLink {
-			continue
+		link := NVLink{GPUUUID: gpuUUID, LinkID: linkID}
+		if gbps, err := strconv.ParseFloat(matches[2], 64); err == nil && gbps > 0 {
+			link.Active = true
+			link.Rate = nvlinkGeneration(gbps)
 		}
-		key, value, ok := splitKeyValue(line)
-		if !ok {
-			continue
-		}
-		switch key {
-		case "Active":
-			link.Active = strings.TrimSpace(value) == "Active"
-		case "Remote Device Type":
-			remoteType = strings.TrimSpace(value)
-		case "Remote Device PCI Bus ID":
-			remoteBus = normalizeBDF(value)
-		}
+		links = append(links, link)
 	}
-	flush()
-
 	return links
 }
 
-// fillNvlinkRates fills the link generation number from the transfer rates
-// reported by "nvidia-smi nvlink -gt d".
-func (s *Sources) fillNvlinkRates(links []NVLink) {
-	out, err := s.SMI("nvlink", "-gt", "d")
+// fillNvlinkRemotes resolves the remote end of each link from
+// "nvidia-smi nvlink -R", which reports the remote PCI bus id per link.
+func (s *Sources) fillNvlinkRemotes(links []NVLink, uuidByBus map[string]string) {
+	out, err := s.SMI("nvlink", "-R")
 	if err != nil {
-		s.log().Debug("NVLink transfer rate query failed", "error", err)
+		s.log().Debug("NVLink remote query failed", "error", err)
 		return
 	}
-	rates := map[string]map[int]int{}
+	remotes := map[nvlinkKey]string{}
 	var gpuUUID string
 	for rawLine := range strings.SplitSeq(out, "\n") {
 		line := strings.TrimSpace(rawLine)
-		if uuid, ok := nvlinkRateGPUUUID(line); ok {
-			gpuUUID = uuid
+		if line == "" {
 			continue
 		}
-		if gpuUUID == "" {
+		if matches := nvlinkGPUHeaderRe.FindStringSubmatch(line); matches != nil && strings.HasPrefix(line, "GPU ") {
+			gpuUUID = stripGPUPrefix(matches[1])
 			continue
 		}
-		if linkID, gbps, ok := parseNvlinkRateLine(line); ok && gbps > 0 {
-			if rates[gpuUUID] == nil {
-				rates[gpuUUID] = map[int]int{}
-			}
-			rates[gpuUUID][linkID] = nvlinkGeneration(gbps)
+		matches := nvlinkRemoteRe.FindStringSubmatch(line)
+		if matches == nil {
+			continue
 		}
+		linkID, err := strconv.Atoi(matches[1])
+		if err != nil {
+			continue
+		}
+		remotes[nvlinkKey{gpuUUID: gpuUUID, linkID: linkID}] = normalizeBDF(matches[2])
 	}
 	for i := range links {
-		if rate, ok := rates[links[i].GPUUUID][links[i].LinkID]; ok {
-			links[i].Rate = rate
+		remoteBus, ok := remotes[nvlinkKey{gpuUUID: links[i].GPUUUID, linkID: links[i].LinkID}]
+		if !ok {
+			continue
+		}
+		if peerUUID, ok := uuidByBus[remoteBus]; ok {
+			links[i].PeerUUID = peerUUID
+		} else if remoteBus != "" {
+			links[i].SwitchID = "NVSwitch:" + remoteBus
 		}
 	}
 }
 
-var (
-	nvlinkRateGPURe = regexp.MustCompile(`^GPU\s+\d+\s*:.*\(UUID:\s*(.+?)\s*\)$`)
-	nvlinkRateRe    = regexp.MustCompile(`^Link\s+(\d+)\s*:\s*([\d.]+)\s*GB/s$`)
-)
-
-func nvlinkRateGPUUUID(line string) (string, bool) {
-	matches := nvlinkRateGPURe.FindStringSubmatch(line)
-	if matches == nil {
-		return "", false
-	}
-	return stripGPUPrefix(matches[1]), true
-}
-
-func parseNvlinkRateLine(line string) (linkID int, gbps float64, ok bool) {
-	matches := nvlinkRateRe.FindStringSubmatch(line)
-	if matches == nil {
-		return 0, 0, false
-	}
-	linkID, err := strconv.Atoi(matches[1])
-	if err != nil {
-		return 0, 0, false
-	}
-	gbps, err = strconv.ParseFloat(matches[2], 64)
-	if err != nil {
-		return 0, 0, false
-	}
-	return linkID, gbps, true
+type nvlinkKey struct {
+	gpuUUID string
+	linkID  int
 }
 
 // nvlinkGeneration maps a link transfer rate in GB/s to the NVLink

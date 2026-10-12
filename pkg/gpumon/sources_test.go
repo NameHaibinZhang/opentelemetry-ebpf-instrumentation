@@ -121,78 +121,67 @@ func TestNvlinkGeneration(t *testing.T) {
 	}
 }
 
-func TestParseNVLINKCurrentFormat(t *testing.T) {
-	const out = `GPU 00000000:0B:00.0 (UUID: GPU-aaa)
-	Link 0
-		Active				: Active
-		Remote Device Type		: GPU
-		Remote Device PCI Bus ID	: 00000000:1B:00.0
-	Link 1
-		Active				: Inactive
-		Remote Device Type		: NVSwitch
-		Remote Device PCI Bus ID	: 00000000:98:00.0
+func TestParseNvlinkStatus(t *testing.T) {
+	const out = `GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-aaa)
+	Link 0: 25.781 GB/s
+	Link 1: <inactive>
 
-GPU 00000000:1B:00.0 (UUID: GPU-bbb)
-	Link 0
-		Active				: Active
-		Remote Device Type		: GPU
-		Remote Device PCI Bus ID	: 00000000:0B:00.0
+GPU 1: NVIDIA A100-SXM4-40GB (UUID: GPU-bbb)
+	Link 0: 25.781 GB/s
 `
-
-	uuidByBus := map[string]string{"0000:0b:00.0": "aaa", "0000:1b:00.0": "bbb"}
-	links := parseNVLINK(out, uuidByBus)
+	links := parseNvlinkStatus(out)
 
 	require.Len(t, links, 3)
-
-	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 0, PeerUUID: "bbb", Active: true}, links[0])
-	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 1, SwitchID: "NVSwitch:0000:98:00.0", Active: false}, links[1])
-	assert.Equal(t, NVLink{GPUUUID: "bbb", LinkID: 0, PeerUUID: "aaa", Active: true}, links[2])
+	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 0, Active: true, Rate: 3}, links[0], "25.781 GB/s is NVLink3")
+	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 1}, links[1])
+	assert.Equal(t, NVLink{GPUUUID: "bbb", LinkID: 0, Active: true, Rate: 3}, links[2])
 }
 
-func TestParseNVLINKLegacyFormat(t *testing.T) {
-	const out = `GPU 00000000:0B:00.0 (UUID: GPU-aaa)
-	Link 0 : Active
-	Link 1 : Inactive
+func TestFillNvlinkRemotes(t *testing.T) {
+	const out = `GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-aaa)
+	Link 0: Remote Device 00000000:1B:00.0: Link 1
+	Link 1: Remote Device 00000000:98:00.0: Link 0
+
+GPU 1: NVIDIA A100-SXM4-40GB (UUID: GPU-bbb)
+	Link 0: Remote Device 00000000:0B:00.0: Link 0
 `
-
-	links := parseNVLINK(out, nil)
-
-	require.Len(t, links, 2)
-	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 0, Active: true}, links[0])
-	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 1, Active: false}, links[1])
-}
-
-func TestParseNVLINKHeaderWithoutUUID(t *testing.T) {
-	const out = `GPU 00000000:0B:00.0
-	Link 0 : Active
-`
-	uuidByBus := map[string]string{"0000:0b:00.0": "aaa"}
-
-	links := parseNVLINK(out, uuidByBus)
-
-	require.Len(t, links, 1)
-	assert.Equal(t, "aaa", links[0].GPUUUID)
-}
-
-func TestFillNvlinkRates(t *testing.T) {
-	const out = `GPU 0: NVIDIA A100 (UUID: GPU-aaa)
-	Link 0:	25 GB/s
-	Link 1:	0 GB/s
-GPU 1: NVIDIA A100 (UUID: GPU-bbb)
-	Link 0:	20 GB/s
-`
-	s := newTestSources(t, fakeSMI(t, map[string]string{"nvlink -gt d": out}))
+	s := newTestSources(t, fakeSMI(t, map[string]string{"nvlink -R": out}))
 
 	links := []NVLink{
 		{GPUUUID: "aaa", LinkID: 0},
 		{GPUUUID: "aaa", LinkID: 1},
 		{GPUUUID: "bbb", LinkID: 0},
+		{GPUUUID: "bbb", LinkID: 9},
 	}
-	s.fillNvlinkRates(links)
+	s.fillNvlinkRemotes(links, map[string]string{"0000:0b:00.0": "aaa", "0000:1b:00.0": "bbb"})
 
-	assert.Equal(t, 2, links[0].Rate, "25 GB/s is NVLink2")
-	assert.Zero(t, links[1].Rate, "links reporting 0 GB/s must not be given a generation")
-	assert.Equal(t, 1, links[2].Rate, "20 GB/s is NVLink1")
+	assert.Equal(t, "bbb", links[0].PeerUUID)
+	assert.Equal(t, "NVSwitch:0000:98:00.0", links[1].SwitchID)
+	assert.Equal(t, "aaa", links[2].PeerUUID)
+	assert.Equal(t, NVLink{GPUUUID: "bbb", LinkID: 9}, links[3], "links without a reported remote keep no peer")
+}
+
+func TestNVLinks(t *testing.T) {
+	const status = `GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-aaa)
+	Link 0: 25.781 GB/s
+	Link 1: <inactive>
+`
+	const remotes = `GPU 0: NVIDIA A100-SXM4-40GB (UUID: GPU-aaa)
+	Link 0: Remote Device 00000000:1B:00.0: Link 0
+`
+	s := newTestSources(t, fakeSMI(t, map[string]string{"nvlink -s": status, "nvlink -R": remotes}))
+
+	links := s.NVLinks([]Device{{BusID: "0000:1b:00.0", UUID: "bbb"}})
+
+	require.Len(t, links, 2)
+	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 0, Active: true, Rate: 3, Width: 4, PeerUUID: "bbb"}, links[0])
+	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 1, Width: 4}, links[1])
+}
+
+func TestNVLinksWithoutHardware(t *testing.T) {
+	s := newTestSources(t, fakeSMI(t, map[string]string{"nvlink -s": ""}))
+
+	assert.Nil(t, s.NVLinks(nil))
 }
 
 func TestProcesses(t *testing.T) {
@@ -220,7 +209,7 @@ func TestMigCapableByBusID(t *testing.T) {
 00000000:2B:00.0, Not Supported
 `
 	s := newTestSources(t, fakeSMI(t, map[string]string{
-		"--query-gpu=pci_bus_id,mig.mode.current --format=csv,noheader": out,
+		"--query-gpu=pci.bus_id,mig.mode.current --format=csv,noheader": out,
 	}))
 
 	caps := s.migCapableByBusID()
@@ -239,7 +228,7 @@ func TestMigCapableByBusIDQueryFailure(t *testing.T) {
 
 func TestInventory(t *testing.T) {
 	s := newTestSources(t, fakeSMI(t, map[string]string{
-		"--query-gpu=pci_bus_id,mig.mode.current --format=csv,noheader": "00000000:0B:00.0, Enabled\n",
+		"--query-gpu=pci.bus_id,mig.mode.current --format=csv,noheader": "00000000:0B:00.0, Enabled\n",
 	}))
 
 	writeDevice(t, s, "0000:0b:00.0", "0000:0b:00.0", `Model:			NVIDIA A100
@@ -299,7 +288,7 @@ func TestInventoryNoDriver(t *testing.T) {
 
 func TestFillNumaFromTopology(t *testing.T) {
 	s := newTestSources(t, fakeSMI(t, map[string]string{
-		"--query-gpu=index,pci_bus_id --format=csv,noheader": "0, 00000000:0B:00.0\n1, 00000000:1B:00.0\n",
+		"--query-gpu=index,pci.bus_id --format=csv,noheader": "0, 00000000:0B:00.0\n1, 00000000:1B:00.0\n",
 		"topo -m": "\tGPU0\tGPU1\tCPU Affinity\n" +
 			"GPU0\t X \tNV2\t0-3\n" +
 			"GPU1\tNV2\t X \t4-7\n",
