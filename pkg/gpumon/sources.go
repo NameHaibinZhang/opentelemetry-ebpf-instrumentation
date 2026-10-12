@@ -1,7 +1,7 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package gpumon
+package gpumon // import "go.opentelemetry.io/obi/pkg/gpumon"
 
 import (
 	"fmt"
