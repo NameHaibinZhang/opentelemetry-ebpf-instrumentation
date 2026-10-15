@@ -1,0 +1,80 @@
+name: Sync upstream
+
+on:
+  schedule:
+    # 01:00 UTC = 09:00 Asia/Shanghai, daily
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # The default token cannot create or update workflow files. Without a
+      # SYNC_PUSH_TOKEN secret (PAT with Contents + Workflows write on this
+      # repo), upstream workflow-file changes are skipped instead (see below).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_PUSH_TOKEN != '' && secrets.SYNC_PUSH_TOKEN || github.token }}
+
+      - name: Reset main to upstream
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/open-telemetry/opentelemetry-ebpf-instrumentation.git
+          git fetch upstream main
+
+          # This workflow only exists on the fork; keep it across the reset below.
+          cp .github/workflows/sync-upstream.yml /tmp/sync-upstream.yml
+
+          git reset --hard upstream/main
+
+          mkdir -p .github/workflows
+          cp /tmp/sync-upstream.yml .github/workflows/sync-upstream.yml
+          git add .github/workflows/sync-upstream.yml
+
+          # No-op when fork main is already upstream main plus this workflow file.
+          if [ "$(git rev-parse 'origin/main^{tree}')" = "$(git write-tree)" ]; then
+            echo "main already in sync with upstream $(git rev-parse --short upstream/main)"
+            exit 0
+          fi
+
+          git commit -m "chore(sync): update main from upstream"
+
+          # Fast-forward when possible; otherwise replace the previous sync commit.
+          if git push --force-with-lease origin main 2>&1 | tee /tmp/push.log; then
+            exit 0
+          fi
+
+          # If the push was rejected only because upstream changed workflow
+          # files, keep the fork's current ones and sync everything else.
+          if ! grep -q "without .workflows. permission\|without .workflow. scope" /tmp/push.log; then
+            exit 1
+          fi
+          echo "::warning::Upstream changed workflow files; keeping the fork's current ones. Configure SYNC_PUSH_TOKEN (Contents + Workflows write) to sync them too."
+
+          rm -rf .github/workflows
+          git checkout origin/main -- .github/workflows
+          git add -A -- .github/workflows
+
+          git commit --amend --no-edit
+
+          if [ "$(git rev-parse 'origin/main^{tree}')" = "$(git write-tree)" ]; then
+            echo "only workflow files differ; keeping them as-is"
+            exit 0
+          fi
+
+          git push --force-with-lease origin main
