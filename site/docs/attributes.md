@@ -38,6 +38,7 @@ GenAI attributes OBI emits that are not part of upstream semconv.
 | `gen_ai.metadata` | string | development | Provider-specific request/response metadata captured on GenAI spans, JSON-encoded. | {"conversation_id":"conv_abc123"} |
 | `gen_ai.request.embedding.input_count` | int | development | Number of inputs submitted to a GenAI embedding request. |  |
 | `gen_ai.rerank.top_n` | int | development | Number of top results requested from a GenAI rerank operation. |  |
+| `gen_ai.span.kind` | string | development | Coarse classification of the GenAI span, derived from `gen_ai.operation.name` (LLM / EMBEDDING / TOOL / RETRIEVER / RERANKER). | LLM; EMBEDDING |
 
 ## `registry.obi.gpu`
 
@@ -56,7 +57,6 @@ HTTP attributes OBI emits that are not part of upstream semconv (captured reques
 
 | Attribute | Type | Stability | Description | Examples |
 | --- | --- | --- | --- | --- |
-| `gen_ai.span.kind` | string | development | Coarse classification of the GenAI span, derived from `gen_ai.operation.name` (LLM / EMBEDDING / TOOL / RETRIEVER / RERANKER). | LLM; EMBEDDING |
 | `http.request.body.content` | string | development | Captured HTTP request body content. Only populated when OBI's body capture is enabled and subject to OBI's body-extraction rules (size limits, content-type filtering, obfuscation). | {"user":"alice"} |
 | `http.response.body.content` | string | development | Captured HTTP response body content. Only populated when OBI's body capture is enabled and subject to OBI's body-extraction rules (size limits, content-type filtering, obfuscation). | {"status":"ok"} |
 | `obi.http.response.observed` | boolean | development | Present and false on an HTTP span whose response was never seen; absent otherwise. `http.response.status_code` is emitted instead once a response is observed. | false |
