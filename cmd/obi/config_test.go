@@ -335,3 +335,47 @@ func TestLoadRoute53IntegrationConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, selector.For(attributes.HTTPClientDuration), attr.Server)
 }
+
+func TestEmbeddedDefaultConfigInstrumentsEverythingByDefault(t *testing.T) {
+	cfg, version, err := loadConfigReader(bytes.NewReader(embeddedDefaultConfig))
+
+	require.NoError(t, err)
+	require.Equal(t, configVersionV1, version)
+	require.Len(t, cfg.Discovery.Instrument, 1)
+
+	selector := cfg.Discovery.Instrument[0]
+	require.True(t, selector.Path.MatchString("/usr/local/bin/node"))
+	require.True(t, selector.Path.MatchString("/usr/local/bin/consul"))
+	require.Zero(t, selector.OpenPorts.Len())
+}
+
+func TestEmbeddedDefaultConfigNarrowsToTargetPorts(t *testing.T) {
+	t.Setenv("OBI_SIDECAR_TARGET_PORTS", "8080")
+
+	cfg, _, err := loadConfigReader(bytes.NewReader(embeddedDefaultConfig))
+
+	require.NoError(t, err)
+	require.Len(t, cfg.Discovery.Instrument, 1)
+
+	selector := cfg.Discovery.Instrument[0]
+	require.True(t, selector.Path.MatchString("/usr/local/bin/node"))
+	require.True(t, selector.OpenPorts.Matches(8080))
+	require.False(t, selector.OpenPorts.Matches(8500))
+}
+
+func TestEmbeddedDefaultConfigNarrowsToTargetExeAndPorts(t *testing.T) {
+	t.Setenv("OBI_SIDECAR_TARGET_EXE", "*/node")
+	t.Setenv("OBI_SIDECAR_TARGET_PORTS", "8080,9090-9099")
+
+	cfg, _, err := loadConfigReader(bytes.NewReader(embeddedDefaultConfig))
+
+	require.NoError(t, err)
+	require.Len(t, cfg.Discovery.Instrument, 1)
+
+	selector := cfg.Discovery.Instrument[0]
+	require.True(t, selector.Path.MatchString("/usr/local/bin/node"))
+	require.False(t, selector.Path.MatchString("/usr/local/bin/consul"))
+	require.True(t, selector.OpenPorts.Matches(8080))
+	require.True(t, selector.OpenPorts.Matches(9095))
+	require.False(t, selector.OpenPorts.Matches(8500))
+}
