@@ -132,9 +132,9 @@ GPU 1: NVIDIA A100-SXM4-40GB (UUID: GPU-bbb)
 	links := parseNvlinkStatus(out)
 
 	require.Len(t, links, 3)
-	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 0, Active: true, Rate: 3}, links[0], "25.781 GB/s is NVLink3")
-	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 1}, links[1])
-	assert.Equal(t, NVLink{GPUUUID: "bbb", LinkID: 0, Active: true, Rate: 3}, links[2])
+	assert.Equal(t, NVLink{GPUUUID: "GPU-aaa", LinkID: 0, Active: true, Rate: 3}, links[0], "25.781 GB/s is NVLink3")
+	assert.Equal(t, NVLink{GPUUUID: "GPU-aaa", LinkID: 1}, links[1])
+	assert.Equal(t, NVLink{GPUUUID: "GPU-bbb", LinkID: 0, Active: true, Rate: 3}, links[2])
 }
 
 func TestFillNvlinkRemotes(t *testing.T) {
@@ -148,17 +148,17 @@ GPU 1: NVIDIA A100-SXM4-40GB (UUID: GPU-bbb)
 	s := newTestSources(t, fakeSMI(t, map[string]string{"nvlink -R": out}))
 
 	links := []NVLink{
-		{GPUUUID: "aaa", LinkID: 0},
-		{GPUUUID: "aaa", LinkID: 1},
-		{GPUUUID: "bbb", LinkID: 0},
-		{GPUUUID: "bbb", LinkID: 9},
+		{GPUUUID: "GPU-aaa", LinkID: 0},
+		{GPUUUID: "GPU-aaa", LinkID: 1},
+		{GPUUUID: "GPU-bbb", LinkID: 0},
+		{GPUUUID: "GPU-bbb", LinkID: 9},
 	}
-	s.fillNvlinkRemotes(links, map[string]string{"0000:0b:00.0": "aaa", "0000:1b:00.0": "bbb"})
+	s.fillNvlinkRemotes(links, map[string]string{"0000:0b:00.0": "GPU-aaa", "0000:1b:00.0": "GPU-bbb"})
 
-	assert.Equal(t, "bbb", links[0].PeerUUID)
+	assert.Equal(t, "GPU-bbb", links[0].PeerUUID)
 	assert.Equal(t, "NVSwitch:0000:98:00.0", links[1].SwitchID)
-	assert.Equal(t, "aaa", links[2].PeerUUID)
-	assert.Equal(t, NVLink{GPUUUID: "bbb", LinkID: 9}, links[3], "links without a reported remote keep no peer")
+	assert.Equal(t, "GPU-aaa", links[2].PeerUUID)
+	assert.Equal(t, NVLink{GPUUUID: "GPU-bbb", LinkID: 9}, links[3], "links without a reported remote keep no peer")
 }
 
 func TestNVLinks(t *testing.T) {
@@ -171,11 +171,11 @@ func TestNVLinks(t *testing.T) {
 `
 	s := newTestSources(t, fakeSMI(t, map[string]string{"nvlink -s": status, "nvlink -R": remotes}))
 
-	links := s.NVLinks([]Device{{BusID: "0000:1b:00.0", UUID: "bbb"}})
+	links := s.NVLinks([]Device{{BusID: "0000:1b:00.0", UUID: "GPU-bbb"}})
 
 	require.Len(t, links, 2)
-	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 0, Active: true, Rate: 3, Width: 4, PeerUUID: "bbb"}, links[0])
-	assert.Equal(t, NVLink{GPUUUID: "aaa", LinkID: 1, Width: 4}, links[1])
+	assert.Equal(t, NVLink{GPUUUID: "GPU-aaa", LinkID: 0, Active: true, Rate: 3, Width: 4, PeerUUID: "GPU-bbb"}, links[0])
+	assert.Equal(t, NVLink{GPUUUID: "GPU-aaa", LinkID: 1, Width: 4}, links[1])
 }
 
 func TestNVLinksWithoutHardware(t *testing.T) {
@@ -198,8 +198,8 @@ notapid, GPU-aaa
 	processes := s.Processes()
 
 	assert.Equal(t, []GPUProcess{
-		{GPUUUID: "aaa", PID: 1234},
-		{GPUUUID: "bbb", PID: 5678},
+		{GPUUUID: "GPU-aaa", PID: 1234},
+		{GPUUUID: "GPU-bbb", PID: 5678},
 	}, processes)
 }
 
@@ -256,7 +256,7 @@ GPU UUID:		GPU-bbb
 
 	require.Len(t, devices, 2)
 	assert.Equal(t, Device{
-		UUID:           "aaa",
+		UUID:           "GPU-aaa",
 		BusID:          "0000:0b:00.0",
 		Model:          "NVIDIA A100",
 		Up:             true,
@@ -266,7 +266,7 @@ GPU UUID:		GPU-bbb
 		MigCapable:     true,
 	}, devices[0])
 	assert.Equal(t, Device{
-		UUID:           "bbb",
+		UUID:           "GPU-bbb",
 		BusID:          "0000:1b:00.0",
 		Model:          "NVIDIA H100",
 		Up:             false,
@@ -298,9 +298,9 @@ func TestFillNumaFromTopology(t *testing.T) {
 	writeFile(t, filepath.Join(s.SysRoot, "devices", "system", "node", "node1", "cpulist"), "4-7")
 
 	devices := []Device{
-		{UUID: "aaa", BusID: "0000:0b:00.0", NumaNode: -1},
-		{UUID: "bbb", BusID: "0000:1b:00.0", NumaNode: -1},
-		{UUID: "ccc", BusID: "0000:2b:00.0", NumaNode: 1},
+		{UUID: "GPU-aaa", BusID: "0000:0b:00.0", NumaNode: -1},
+		{UUID: "GPU-bbb", BusID: "0000:1b:00.0", NumaNode: -1},
+		{UUID: "GPU-ccc", BusID: "0000:2b:00.0", NumaNode: 1},
 	}
 
 	s.fillNumaFromTopology(devices)
@@ -319,13 +319,13 @@ func TestAER(t *testing.T) {
 	// no aer_dev_fatal file: unsupported severity must be skipped
 
 	samples := s.AER([]Device{
-		{UUID: "aaa", BusID: "0000:0b:00.0"},
+		{UUID: "GPU-aaa", BusID: "0000:0b:00.0"},
 		{UUID: "ghost"},
 	})
 
 	assert.Equal(t, []AERSample{
-		{GPUUUID: "aaa", BusID: "0000:0b:00.0", Severity: "correctable", Total: 8},
-		{GPUUUID: "aaa", BusID: "0000:0b:00.0", Severity: "nonfatal", Total: 16},
+		{GPUUUID: "GPU-aaa", BusID: "0000:0b:00.0", Severity: "correctable", Total: 8},
+		{GPUUUID: "GPU-aaa", BusID: "0000:0b:00.0", Severity: "nonfatal", Total: 16},
 	}, samples)
 }
 

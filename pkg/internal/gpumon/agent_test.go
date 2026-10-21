@@ -32,27 +32,27 @@ func TestAerDeltas(t *testing.T) {
 
 	// first observation only records the baseline
 	assert.Empty(t, agent.aerDeltas([]AERSample{
-		{GPUUUID: "aaa", BusID: "0000:0b:00.0", Severity: "correctable", Total: 10},
+		{GPUUUID: "GPU-aaa", BusID: "0000:0b:00.0", Severity: "correctable", Total: 10},
 	}))
 
 	deltas := agent.aerDeltas([]AERSample{
-		{GPUUUID: "aaa", BusID: "0000:0b:00.0", Severity: "correctable", Total: 12},
-		{GPUUUID: "aaa", BusID: "0000:0b:00.0", Severity: "nonfatal", Total: 5},
+		{GPUUUID: "GPU-aaa", BusID: "0000:0b:00.0", Severity: "correctable", Total: 12},
+		{GPUUUID: "GPU-aaa", BusID: "0000:0b:00.0", Severity: "nonfatal", Total: 5},
 	})
 	assert.Equal(t, []AERDelta{
-		{GPUUUID: "aaa", BusID: "0000:0b:00.0", Severity: "correctable", Count: 2},
+		{GPUUUID: "GPU-aaa", BusID: "0000:0b:00.0", Severity: "correctable", Count: 2},
 	}, deltas, "nonfatal has no baseline yet, so it emits no delta")
 
 	assert.Empty(t, agent.aerDeltas([]AERSample{
-		{GPUUUID: "aaa", BusID: "0000:0b:00.0", Severity: "correctable", Total: 12},
-		{GPUUUID: "aaa", BusID: "0000:0b:00.0", Severity: "nonfatal", Total: 5},
+		{GPUUUID: "GPU-aaa", BusID: "0000:0b:00.0", Severity: "correctable", Total: 12},
+		{GPUUUID: "GPU-aaa", BusID: "0000:0b:00.0", Severity: "nonfatal", Total: 5},
 	}), "unchanged counters emit no delta")
 
 	deltas = agent.aerDeltas([]AERSample{
-		{GPUUUID: "aaa", BusID: "0000:0b:00.0", Severity: "correctable", Total: 3},
+		{GPUUUID: "GPU-aaa", BusID: "0000:0b:00.0", Severity: "correctable", Total: 3},
 	})
 	assert.Equal(t, []AERDelta{
-		{GPUUUID: "aaa", BusID: "0000:0b:00.0", Severity: "correctable", Count: 3},
+		{GPUUUID: "GPU-aaa", BusID: "0000:0b:00.0", Severity: "correctable", Count: 3},
 	}, deltas, "a counter reset is reported as the new total")
 }
 
@@ -115,8 +115,8 @@ func TestResolvedProcesses(t *testing.T) {
 	processes := agent.resolvedProcesses()
 
 	assert.Equal(t, []GPUProcess{
-		{GPUUUID: "aaa", PID: 100, Identity: ProcessIdentity{Executable: "python", Rank: "0"}},
-		{GPUUUID: "bbb", PID: 101, Identity: ProcessIdentity{Executable: "train", PodName: "pod-a", JobName: "job-a", Rank: "1"}},
+		{GPUUUID: "GPU-aaa", PID: 100, Identity: ProcessIdentity{Executable: "python", Rank: "0"}},
+		{GPUUUID: "GPU-bbb", PID: 101, Identity: ProcessIdentity{Executable: "train", PodName: "pod-a", JobName: "job-a", Rank: "1"}},
 	}, processes, "processes must be sorted by GPU UUID, then PID")
 }
 
@@ -147,7 +147,7 @@ func layoutGPUs(t *testing.T, s *Sources, uuids ...string) {
 	for i, uuid := range uuids {
 		writeFile(t, filepath.Join(s.ProcRoot, "driver", "nvidia", "gpus",
 			normalizeBDF("00000000:0"+string(rune('b'+i))+":00.0"), "information"),
-			"GPU UUID: GPU-"+uuid+"\n")
+			"GPU UUID: "+uuid+"\n")
 	}
 }
 
@@ -156,7 +156,7 @@ func TestGhostDeviceLifecycle(t *testing.T) {
 		"nvlink -s": "",
 		"--query-compute-apps=pid,gpu_uuid --format=csv,noheader": "",
 	}))
-	layoutGPUs(t, s, "aaa", "bbb")
+	layoutGPUs(t, s, "GPU-aaa", "GPU-bbb")
 	reporter := &recordingReporter{}
 	agent := NewAgent(time.Hour, s, nil, reporter)
 
@@ -170,13 +170,13 @@ func TestGhostDeviceLifecycle(t *testing.T) {
 	require.Len(t, reporter.snapshots, 2)
 	require.Len(t, reporter.snapshots[1].Devices, 2)
 	ghost := reporter.snapshots[1].Devices[1]
-	assert.Equal(t, Device{UUID: "bbb", Up: false}, ghost)
+	assert.Equal(t, Device{UUID: "GPU-bbb", Up: false}, ghost)
 
 	// and the cycle after that no longer reports it
 	agent.poll()
 	require.Len(t, reporter.snapshots, 3)
 	assert.Len(t, reporter.snapshots[2].Devices, 1)
-	assert.Equal(t, "aaa", reporter.snapshots[2].Devices[0].UUID)
+	assert.Equal(t, "GPU-aaa", reporter.snapshots[2].Devices[0].UUID)
 }
 
 func TestRunStopsOnContextCancel(t *testing.T) {
@@ -184,7 +184,7 @@ func TestRunStopsOnContextCancel(t *testing.T) {
 		"nvlink -s": "",
 		"--query-compute-apps=pid,gpu_uuid --format=csv,noheader": "",
 	}))
-	layoutGPUs(t, s, "aaa")
+	layoutGPUs(t, s, "GPU-aaa")
 	reporter := &recordingReporter{}
 	agent := NewAgent(time.Millisecond, s, nil, reporter)
 

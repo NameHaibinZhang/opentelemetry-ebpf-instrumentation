@@ -90,7 +90,7 @@ func (s *Sources) procDevice(dir, fallbackBusID string, migCapable map[string]bo
 	fields := readKeyValues(filepath.Join(dir, "information"))
 
 	device := Device{
-		UUID:       stripGPUPrefix(fields["GPU UUID"]),
+		UUID:       normalizeGPUUUID(fields["GPU UUID"]),
 		Model:      fields["Model"],
 		BusID:      normalizeBDF(fields["Bus Location"]),
 		NumaNode:   unknownNumaNode,
@@ -371,7 +371,7 @@ func parseNvlinkStatus(out string) []NVLink {
 		}
 
 		if matches := nvlinkGPUHeaderRe.FindStringSubmatch(line); matches != nil && strings.HasPrefix(line, "GPU ") {
-			gpuUUID = stripGPUPrefix(matches[1])
+			gpuUUID = normalizeGPUUUID(matches[1])
 			continue
 		}
 		matches := nvlinkStatusRe.FindStringSubmatch(line)
@@ -408,7 +408,7 @@ func (s *Sources) fillNvlinkRemotes(links []NVLink, uuidByBus map[string]string)
 			continue
 		}
 		if matches := nvlinkGPUHeaderRe.FindStringSubmatch(line); matches != nil && strings.HasPrefix(line, "GPU ") {
-			gpuUUID = stripGPUPrefix(matches[1])
+			gpuUUID = normalizeGPUUUID(matches[1])
 			continue
 		}
 		matches := nvlinkRemoteRe.FindStringSubmatch(line)
@@ -500,13 +500,17 @@ func (s *Sources) Processes() []GPUProcess {
 		if uuid == "" || strings.HasPrefix(uuid, "MIG-") {
 			continue
 		}
-		processes = append(processes, GPUProcess{GPUUUID: stripGPUPrefix(uuid), PID: pid})
+		processes = append(processes, GPUProcess{GPUUUID: normalizeGPUUUID(uuid), PID: pid})
 	}
 	return processes
 }
 
-func stripGPUPrefix(uuid string) string {
-	return strings.TrimPrefix(strings.TrimSpace(uuid), gpuUUIDPrefix)
+func normalizeGPUUUID(uuid string) string {
+	uuid = strings.TrimSpace(uuid)
+	if uuid == "" || strings.HasPrefix(uuid, gpuUUIDPrefix) {
+		return uuid
+	}
+	return gpuUUIDPrefix + uuid
 }
 
 // normalizeBDF canonicalizes a PCI bus address such as "00000000:0B:00.0"

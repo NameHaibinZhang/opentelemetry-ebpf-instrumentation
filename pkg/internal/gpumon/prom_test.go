@@ -16,7 +16,7 @@ import (
 func fullSnapshot() *Snapshot {
 	return &Snapshot{
 		Devices: []Device{{
-			UUID:           "aaa",
+			UUID:           "GPU-aaa",
 			BusID:          "0000:0b:00.0",
 			Model:          "NVIDIA A100",
 			Up:             true,
@@ -26,25 +26,25 @@ func fullSnapshot() *Snapshot {
 			PCIeWidth:      16,
 		}},
 		NVLinks: []NVLink{{
-			GPUUUID:  "aaa",
+			GPUUUID:  "GPU-aaa",
 			LinkID:   1,
 			Active:   true,
-			PeerUUID: "bbb",
+			PeerUUID: "GPU-bbb",
 			Rate:     4,
 			Width:    nvlinkWidthLanes,
 		}},
 		Processes: []GPUProcess{{
-			GPUUUID:  "aaa",
+			GPUUUID:  "GPU-aaa",
 			PID:      1234,
 			Identity: ProcessIdentity{Executable: "python", PodName: "pod-a", JobName: "job-a", Rank: "0"},
 		}},
 		Conflicts: []GPUProcess{{
-			GPUUUID:  "aaa",
+			GPUUUID:  "GPU-aaa",
 			PID:      1234,
 			Identity: ProcessIdentity{PodName: "pod-a", Rank: "0"},
 		}},
 		AER: []AERDelta{{
-			GPUUUID:  "aaa",
+			GPUUUID:  "GPU-aaa",
 			BusID:    "0000:0b:00.0",
 			Severity: "correctable",
 			Count:    2,
@@ -119,7 +119,7 @@ func TestPromReporterFamilyNamesAndLabels(t *testing.T) {
 	info := families[metricGPUInfo]
 	require.Len(t, info.Metric, 1)
 	assert.Equal(t, map[string]string{
-		labelGPUUUID:       "aaa",
+		labelGPUUUID:       "GPU-aaa",
 		labelGPUPciBusID:   "0000:0b:00.0",
 		labelHWModel:       "NVIDIA A100",
 		labelGPUMigCapable: "true",
@@ -128,16 +128,16 @@ func TestPromReporterFamilyNamesAndLabels(t *testing.T) {
 	nvlinkUp := families[metricGPUNvlinkUp]
 	require.Len(t, nvlinkUp.Metric, 1)
 	assert.Equal(t, map[string]string{
-		labelGPUUUID:           "aaa",
+		labelGPUUUID:           "GPU-aaa",
 		labelGPUNvlinkLinkID:   "1",
-		labelGPUPeerUUID:       "bbb",
+		labelGPUPeerUUID:       "GPU-bbb",
 		labelGPUNvlinkSwitchID: "",
 	}, labelsOf(nvlinkUp.Metric[0]))
 
 	processInfo := families[metricGPUProcessInfo]
 	require.Len(t, processInfo.Metric, 1)
 	assert.Equal(t, map[string]string{
-		labelGPUUUID:           "aaa",
+		labelGPUUUID:           "GPU-aaa",
 		labelProcessPID:        "1234",
 		labelProcessExecutable: "python",
 		labelK8sPodName:        "pod-a",
@@ -148,7 +148,7 @@ func TestPromReporterFamilyNamesAndLabels(t *testing.T) {
 	aer := families[metricGPUPcieAerErrors]
 	require.Len(t, aer.Metric, 1)
 	assert.Equal(t, map[string]string{
-		labelGPUUUID:            "aaa",
+		labelGPUUUID:            "GPU-aaa",
 		labelGPUPcieAerSeverity: "correctable",
 		labelGPUPciBusID:        "0000:0b:00.0",
 	}, labelsOf(aer.Metric[0]))
@@ -158,17 +158,17 @@ func TestPromReporterValues(t *testing.T) {
 	reporter, _ := newPromTestSetup(t)
 	reporter.Report(fullSnapshot())
 
-	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.up.WithLabelValues("aaa")), 1e-9)
-	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.info.WithLabelValues("aaa", "0000:0b:00.0", "NVIDIA A100", "true")), 1e-9)
-	assert.InDelta(t, 0.0, testutil.ToFloat64(reporter.numa.WithLabelValues("aaa")), 1e-9)
-	assert.InDelta(t, 4.0, testutil.ToFloat64(reporter.pcieGeneration.WithLabelValues("aaa")), 1e-9)
-	assert.InDelta(t, 16.0, testutil.ToFloat64(reporter.pcieWidth.WithLabelValues("aaa")), 1e-9)
-	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.nvlinkUp.WithLabelValues("aaa", "1", "bbb", "")), 1e-9)
-	assert.InDelta(t, 4.0, testutil.ToFloat64(reporter.nvlinkRate.WithLabelValues("aaa", "1", "bbb", "")), 1e-9)
-	assert.InDelta(t, float64(nvlinkWidthLanes), testutil.ToFloat64(reporter.nvlinkWidth.WithLabelValues("aaa", "1", "bbb", "")), 1e-9)
-	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.processInfo.WithLabelValues("aaa", "1234", "python", "pod-a", "job-a", "0")), 1e-9)
-	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.conflicts.WithLabelValues("aaa", "pod-a", "", "0")), 1e-9)
-	assert.InDelta(t, 2.0, testutil.ToFloat64(reporter.aer.WithLabelValues("aaa", "correctable", "0000:0b:00.0")), 1e-9)
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.up.WithLabelValues("GPU-aaa")), 1e-9)
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.info.WithLabelValues("GPU-aaa", "0000:0b:00.0", "NVIDIA A100", "true")), 1e-9)
+	assert.InDelta(t, 0.0, testutil.ToFloat64(reporter.numa.WithLabelValues("GPU-aaa")), 1e-9)
+	assert.InDelta(t, 4.0, testutil.ToFloat64(reporter.pcieGeneration.WithLabelValues("GPU-aaa")), 1e-9)
+	assert.InDelta(t, 16.0, testutil.ToFloat64(reporter.pcieWidth.WithLabelValues("GPU-aaa")), 1e-9)
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.nvlinkUp.WithLabelValues("GPU-aaa", "1", "GPU-bbb", "")), 1e-9)
+	assert.InDelta(t, 4.0, testutil.ToFloat64(reporter.nvlinkRate.WithLabelValues("GPU-aaa", "1", "GPU-bbb", "")), 1e-9)
+	assert.InDelta(t, float64(nvlinkWidthLanes), testutil.ToFloat64(reporter.nvlinkWidth.WithLabelValues("GPU-aaa", "1", "GPU-bbb", "")), 1e-9)
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.processInfo.WithLabelValues("GPU-aaa", "1234", "python", "pod-a", "job-a", "0")), 1e-9)
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.conflicts.WithLabelValues("GPU-aaa", "pod-a", "", "0")), 1e-9)
+	assert.InDelta(t, 2.0, testutil.ToFloat64(reporter.aer.WithLabelValues("GPU-aaa", "correctable", "0000:0b:00.0")), 1e-9)
 }
 
 func TestPromReporterGhostDeviceOnlyReportsUp(t *testing.T) {
@@ -185,17 +185,17 @@ func TestPromReporterWipesGaugeSeriesBetweenCycles(t *testing.T) {
 
 	two := fullSnapshot()
 	two.Devices = append(two.Devices, Device{
-		UUID: "bbb", BusID: "0000:1b:00.0", Model: "NVIDIA H100", Up: true, NumaNode: 1,
+		UUID: "GPU-bbb", BusID: "0000:1b:00.0", Model: "NVIDIA H100", Up: true, NumaNode: 1,
 	})
 	reporter.Report(two)
-	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.info.WithLabelValues("bbb", "0000:1b:00.0", "NVIDIA H100", "false")), 1e-9)
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.info.WithLabelValues("GPU-bbb", "0000:1b:00.0", "NVIDIA H100", "false")), 1e-9)
 
 	reporter.Report(fullSnapshot())
 
 	families := gatherFamilies(t, registry)
 	info := families[metricGPUInfo]
 	require.Len(t, info.Metric, 1, "the gone device series must be wiped")
-	assert.Equal(t, "aaa", labelValue(info.Metric[0], labelGPUUUID))
+	assert.Equal(t, "GPU-aaa", labelValue(info.Metric[0], labelGPUUUID))
 }
 
 func TestPromReporterCountersAccumulateAcrossCycles(t *testing.T) {
@@ -204,8 +204,8 @@ func TestPromReporterCountersAccumulateAcrossCycles(t *testing.T) {
 	reporter.Report(fullSnapshot())
 	reporter.Report(fullSnapshot())
 
-	assert.InDelta(t, 2.0, testutil.ToFloat64(reporter.conflicts.WithLabelValues("aaa", "pod-a", "", "0")), 1e-9)
-	assert.InDelta(t, 4.0, testutil.ToFloat64(reporter.aer.WithLabelValues("aaa", "correctable", "0000:0b:00.0")), 1e-9)
+	assert.InDelta(t, 2.0, testutil.ToFloat64(reporter.conflicts.WithLabelValues("GPU-aaa", "pod-a", "", "0")), 1e-9)
+	assert.InDelta(t, 4.0, testutil.ToFloat64(reporter.aer.WithLabelValues("GPU-aaa", "correctable", "0000:0b:00.0")), 1e-9)
 }
 
 func TestPromReporterExtraLabels(t *testing.T) {
@@ -216,7 +216,7 @@ func TestPromReporterExtraLabels(t *testing.T) {
 	info := families[metricGPUInfo]
 	require.Len(t, info.Metric, 1)
 	assert.Equal(t, map[string]string{
-		labelGPUUUID:             "aaa",
+		labelGPUUUID:             "GPU-aaa",
 		labelGPUPciBusID:         "0000:0b:00.0",
 		labelHWModel:             "NVIDIA A100",
 		labelGPUMigCapable:       "true",
@@ -230,15 +230,15 @@ func TestPromReporterExtraLabels(t *testing.T) {
 	assert.Equal(t, "pay", labelValue(up.Metric[0], "team"))
 
 	// The vec wiring must match the reported values, or Collect would panic.
-	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.up.WithLabelValues("aaa", "prod", "pay")), 1e-9)
-	assert.InDelta(t, 2.0, testutil.ToFloat64(reporter.aer.WithLabelValues("aaa", "correctable", "0000:0b:00.0", "prod", "pay")), 1e-9)
+	assert.InDelta(t, 1.0, testutil.ToFloat64(reporter.up.WithLabelValues("GPU-aaa", "prod", "pay")), 1e-9)
+	assert.InDelta(t, 2.0, testutil.ToFloat64(reporter.aer.WithLabelValues("GPU-aaa", "correctable", "0000:0b:00.0", "prod", "pay")), 1e-9)
 }
 
 func TestPromReporterCounterExtraLabelsAccumulate(t *testing.T) {
 	reporter, _ := newPromTestSetupWithExtra(t, ParseExtraLabels("team=pay"))
 	reporter.Report(fullSnapshot())
 	reporter.Report(fullSnapshot())
-	assert.InDelta(t, 4.0, testutil.ToFloat64(reporter.aer.WithLabelValues("aaa", "correctable", "0000:0b:00.0", "pay")), 1e-9)
+	assert.InDelta(t, 4.0, testutil.ToFloat64(reporter.aer.WithLabelValues("GPU-aaa", "correctable", "0000:0b:00.0", "pay")), 1e-9)
 }
 
 func newPromTestSetupWithExtra(t *testing.T, extra ExtraLabels) (*PromReporter, *prometheus.Registry) {

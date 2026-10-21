@@ -10,8 +10,7 @@ package gpumon
 // (the GPU was present in the previous cycle and is gone now) only carries
 // UUID and Up=false, so consumers must tolerate empty values for the rest.
 type Device struct {
-	// UUID is the bare GPU UUID, with the "GPU-" prefix removed so it matches
-	// the DCGM UUID label.
+	// UUID includes the "GPU-" prefix, matching the DCGM UUID label.
 	UUID string
 	// BusID is the PCI bus address in domain:bus:device.function form,
 	// e.g. "0000:0b:00.0".
