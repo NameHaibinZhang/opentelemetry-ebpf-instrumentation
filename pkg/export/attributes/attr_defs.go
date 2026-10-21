@@ -531,6 +531,7 @@ func getDefinitions(
 		GPUCudaKernelLaunchCalls.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -539,6 +540,7 @@ func getDefinitions(
 		GPUCudaGraphLaunchCalls.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -547,6 +549,7 @@ func getDefinitions(
 		GPUCudaKernelGridSize.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -555,6 +558,7 @@ func getDefinitions(
 		GPUCudaKernelBlockSize.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -563,6 +567,7 @@ func getDefinitions(
 		GPUCudaMemoryAllocations.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes, &appKubeAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -572,6 +577,7 @@ func getDefinitions(
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
 				attr.CudaMemcpyKind:  true,
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -580,6 +586,7 @@ func getDefinitions(
 		GPUCudaMemoryFreeBytes.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes, &appKubeAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -588,6 +595,7 @@ func getDefinitions(
 		GPUCudaMemsetBytes.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -596,6 +604,7 @@ func getDefinitions(
 		GPUCudaStreamCreateCalls.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -604,6 +613,7 @@ func getDefinitions(
 		GPUCudaStreamDestroyCalls.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -612,6 +622,7 @@ func getDefinitions(
 		GPUCudaEventRecordCalls.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -620,6 +631,7 @@ func getDefinitions(
 		GPUCudaEventSynchronizeCalls.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -628,6 +640,7 @@ func getDefinitions(
 		GPUCudaStreamSynchronizeCalls.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -636,6 +649,7 @@ func getDefinitions(
 		GPUCudaDeviceSynchronizeCalls.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,
@@ -644,6 +658,7 @@ func getDefinitions(
 		GPUCudaHostRegisterBytes.Section: {
 			SubGroups: []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{
+				attr.ProcessPID:      true,
 				attr.CudaDeviceIndex: true,
 				attr.CudaDeviceUUID:  true,
 				attr.CudaDeviceModel: true,

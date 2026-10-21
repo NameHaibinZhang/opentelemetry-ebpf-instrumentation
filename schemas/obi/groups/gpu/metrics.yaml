@@ -12,6 +12,8 @@ metrics:
     brief: >
       Count of CUDA kernel launches observed (cudaLaunchKernel).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -28,6 +30,8 @@ metrics:
     brief: >
       Count of CUDA graph launches observed (cudaGraphLaunch).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -44,6 +48,8 @@ metrics:
     brief: >
       Bytes requested through CUDA device memory allocations (cudaMalloc).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -60,6 +66,8 @@ metrics:
     brief: >
       Distribution of CUDA kernel launch grid sizes (grid.x * grid.y * grid.z).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -77,6 +85,8 @@ metrics:
       Distribution of CUDA kernel launch block sizes
       (block.x * block.y * block.z).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -96,6 +106,8 @@ metrics:
     attributes:
       - ref: cuda.memcpy.kind
         requirement_level: recommended
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -112,6 +124,8 @@ metrics:
     brief: >
       Bytes released through CUDA device memory frees (cudaFree).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -128,6 +142,8 @@ metrics:
     brief: >
       Bytes set through CUDA memory set operations (cudaMemset).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -144,6 +160,8 @@ metrics:
     brief: >
       Count of CUDA stream creations observed (cudaStreamCreate).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -160,6 +178,8 @@ metrics:
     brief: >
       Count of CUDA stream destructions observed (cudaStreamDestroy).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -176,6 +196,8 @@ metrics:
     brief: >
       Count of CUDA event records observed (cudaEventRecord).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -192,6 +214,8 @@ metrics:
     brief: >
       Count of CUDA event synchronizations observed (cudaEventSynchronize).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -208,6 +232,8 @@ metrics:
     brief: >
       Count of CUDA stream synchronizations observed (cudaStreamSynchronize).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -224,6 +250,8 @@ metrics:
     brief: >
       Count of CUDA device synchronizations observed (cudaDeviceSynchronize).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid
@@ -241,6 +269,8 @@ metrics:
       Bytes registered through CUDA host memory registration
       (cudaHostRegister).
     attributes:
+      - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.device.index
         requirement_level: recommended
       - ref: cuda.device.uuid

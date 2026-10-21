@@ -320,6 +320,14 @@ func spanOTELGetters(name attr.Name) (attributes.Getter[*Span, attribute.KeyValu
 			}
 			return attribute.KeyValue{}
 		}
+	case attr.ProcessPID:
+		getter = func(span *Span) attribute.KeyValue {
+			if span.Pid.HostPID == 0 {
+				return attribute.KeyValue{}
+			}
+			// Host PID (tgid in the root PID namespace), not the container PID.
+			return semconv.ProcessPID(int(span.Pid.HostPID))
+		}
 	case attr.CudaMemcpyKind:
 		getter = func(span *Span) attribute.KeyValue { return CudaMemcpy(span.SubType) }
 	case attr.CudaDeviceIndex:
