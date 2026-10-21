@@ -26,13 +26,42 @@ func FindLibMaps(pid app.PID) ([]*procfs.ProcMap, error) {
 }
 
 func LibPath(name string, maps []*procfs.ProcMap) *procfs.ProcMap {
-	for _, m := range maps {
-		if strings.Contains(m.Pathname, string(filepath.Separator)+name) && m.Perms.Execute {
-			return m
-		}
+	paths := LibPaths(name, maps)
+	if len(paths) == 0 {
+		return nil
 	}
 
-	return nil
+	return paths[0]
+}
+
+func LibPaths(name string, maps []*procfs.ProcMap) []*procfs.ProcMap {
+	type mappingID struct {
+		dev      uint64
+		inode    uint64
+		pathname string
+	}
+
+	var paths []*procfs.ProcMap
+	seen := map[mappingID]struct{}{}
+
+	for _, m := range maps {
+		if !strings.Contains(m.Pathname, string(filepath.Separator)+name) || !m.Perms.Execute {
+			continue
+		}
+
+		id := mappingID{dev: m.Dev, inode: m.Inode}
+		if m.Inode == 0 {
+			id.pathname = m.Pathname
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+
+		seen[id] = struct{}{}
+		paths = append(paths, m)
+	}
+
+	return paths
 }
 
 // FindExeBaseAddr returns the runtime load address of /proc/<pid>/exe.

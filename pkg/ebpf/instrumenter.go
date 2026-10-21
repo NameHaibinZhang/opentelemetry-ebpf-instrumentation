@@ -468,13 +468,29 @@ type uprobeModule struct {
 func (i *instrumenter) uprobeModules(p Tracer, pid app.PID, maps []*procfs.ProcMap, exePath string, exeIno uint64, log *slog.Logger) map[uint64]*uprobeModule {
 	modules := map[uint64]*uprobeModule{}
 
+	addModule := func(lib, instrPath string, instrumentedIno uint64, pMap map[string][]*ebpfcommon.ProbeDesc) {
+		mod, ok := modules[instrumentedIno]
+		if ok {
+			if filtered := dedupModuleProbes(mod.probes, pMap); len(filtered) > 0 {
+				mod.probes = append(mod.probes, filtered)
+			}
+			return
+		}
+
+		modules[instrumentedIno] = &uprobeModule{
+			lib:       lib,
+			instrPath: instrPath,
+			probes:    []map[string][]*ebpfcommon.ProbeDesc{pMap},
+		}
+	}
+
 	for lib, pMap := range p.UProbes() {
-		baseLib, selected, err := matchVersionedUprobeLibrary(lib, maps)
+		baseLib, libMaps, constrained, err := matchingUprobeLibraryMaps(lib, maps)
 		if err != nil {
 			log.Warn("invalid version annotation for uprobe library", "lib", lib, "error", err)
 			continue
 		}
-		if !selected {
+		if constrained && len(libMaps) == 0 {
 			log.Debug("skipping version-mismatched uprobe library", "lib", lib)
 			continue
 		}
@@ -487,24 +503,16 @@ func (i *instrumenter) uprobeModules(p Tracer, pid app.PID, maps []*procfs.ProcM
 		}
 
 		log.Debug("finding library", "lib", lib)
-		instrPath, instrumentedIno, mappedPath, found := resolveInstrPath(pid, lib, maps, exePath, exeIno)
-		if found && mappedPath != "" {
-			log.Debug("instrumenting library", "lib", lib, "path", mappedPath, "ino", instrumentedIno)
+		if len(libMaps) == 0 {
+			log.Debug(lib+" not linked, attempting to instrument executable", "path", exePath)
+			addModule(lib, exePath, exeIno, pMap)
+			continue
 		}
 
-		// We didn't find this library in the shared libraries, look up for the symbols in the executable directly
-		if !found {
-			// E.g. NodeJS uses OpenSSL but they ship it as statically linked in the node binary
-			log.Debug(lib+" not linked, attempting to instrument executable", "path", instrPath)
-		}
-
-		mod, ok := modules[instrumentedIno]
-		if ok {
-			if filtered := dedupModuleProbes(mod.probes, pMap); len(filtered) > 0 {
-				mod.probes = append(mod.probes, filtered)
-			}
-		} else {
-			modules[instrumentedIno] = &uprobeModule{lib: lib, instrPath: instrPath, probes: []map[string][]*ebpfcommon.ProbeDesc{pMap}}
+		for _, libMap := range libMaps {
+			instrPath, instrumentedIno := resolveMappedInstrPath(pid, libMap, exeIno)
+			log.Debug("instrumenting library", "lib", lib, "path", libMap.Pathname, "ino", instrumentedIno)
+			addModule(lib, instrPath, instrumentedIno, pMap)
 		}
 	}
 
@@ -604,6 +612,31 @@ func matchVersionedUprobeLibrary(name string, maps []*procfs.ProcMap) (string, b
 	return baseName, constraints.Check(libVersion), nil
 }
 
+func matchingUprobeLibraryMaps(
+	name string,
+	maps []*procfs.ProcMap,
+) (string, []*procfs.ProcMap, bool, error) {
+	baseName, constraints, hasConstraint, err := parseVersionAnnotation(name)
+	if err != nil {
+		return "", nil, false, err
+	}
+
+	libMaps := procs.LibPaths(baseName, maps)
+	if !hasConstraint {
+		return baseName, libMaps, false, nil
+	}
+
+	matching := make([]*procfs.ProcMap, 0, len(libMaps))
+	for _, libMap := range libMaps {
+		libVersion, ok := versionFromPath(libMap.Pathname)
+		if ok && constraints.Check(libVersion) {
+			matching = append(matching, libMap)
+		}
+	}
+
+	return baseName, matching, true, nil
+}
+
 // parseVersionAnnotation splits a library name that optionally carries a version constraint
 // in square brackets, e.g. "_asyncio[>= 3.12]" → baseName="_asyncio", constraint=">=3.12".
 // A name without brackets is returned unchanged with hasConstraint=false.
@@ -694,21 +727,29 @@ func resolveInstrPath(
 		return exePath, exeIno, "", false
 	}
 
-	mappedPath := libMap.Pathname
+	instrPath, instrumentedIno := resolveMappedInstrPath(pid, libMap, exeIno)
+	return instrPath, instrumentedIno, libMap.Pathname, true
+}
+
+func resolveMappedInstrPath(pid app.PID, libMap *procfs.ProcMap, fallbackIno uint64) (string, uint64) {
 	libInstrPath := fmt.Sprintf("/proc/%d/map_files/%x-%x", pid, libMap.StartAddr, libMap.EndAddr)
 	if info, err := os.Stat(libInstrPath); err == nil {
 		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			return libInstrPath, stat.Ino, mappedPath, true
+			return libInstrPath, stat.Ino
 		}
 	}
 
-	if info, err := os.Stat(mappedPath); err == nil {
+	if info, err := os.Stat(libMap.Pathname); err == nil {
 		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			return mappedPath, stat.Ino, mappedPath, true
+			return libMap.Pathname, stat.Ino
 		}
 	}
 
-	return mappedPath, exeIno, mappedPath, true
+	if libMap.Inode != 0 {
+		return libMap.Pathname, libMap.Inode
+	}
+
+	return libMap.Pathname, fallbackIno
 }
 
 func (i *instrumenter) uprobes(pid app.PID, p Tracer, maps []*procfs.ProcMap) error {

@@ -924,6 +924,77 @@ func TestUprobeModulesRespectsVersionedLibraryAnnotations(t *testing.T) {
 	assert.NotContains(t, selectedSymbols, "task_step")
 }
 
+func TestUprobeModulesIncludesAllMatchingLibraryMappings(t *testing.T) {
+	cuda12 := &procfs.ProcMap{
+		Pathname: "/tmp/a/libcudart.so.12",
+		Dev:      1,
+		Inode:    12,
+		Perms:    &procfs.ProcMapPermissions{Execute: true},
+	}
+	cuda12Duplicate := &procfs.ProcMap{
+		Pathname: "/tmp/a/libcudart.so.12",
+		Dev:      1,
+		Inode:    12,
+		Perms:    &procfs.ProcMapPermissions{Execute: true},
+	}
+	cuda13 := &procfs.ProcMap{
+		Pathname: "/opt/cuda/libcudart.so.13",
+		Dev:      1,
+		Inode:    13,
+		Perms:    &procfs.ProcMapPermissions{Execute: true},
+	}
+	tracer := stubTracer{uprobes: map[string]map[string][]*ebpfcommon.ProbeDesc{
+		"libcudart.so": {"cudaMalloc": {{}}},
+	}}
+
+	modules := (&instrumenter{}).uprobeModules(
+		&tracer,
+		123,
+		[]*procfs.ProcMap{cuda12, cuda12Duplicate, cuda13},
+		"/proc/123/exe",
+		42,
+		slog.Default(),
+	)
+
+	require.Len(t, modules, 2)
+	assert.Equal(t, cuda12.Pathname, modules[12].instrPath)
+	assert.Equal(t, cuda13.Pathname, modules[13].instrPath)
+	assert.Len(t, modules[12].probes, 1)
+	assert.Len(t, modules[13].probes, 1)
+}
+
+func TestUprobeModulesAppliesVersionConstraintToEveryMapping(t *testing.T) {
+	maps := []*procfs.ProcMap{
+		{
+			Pathname: "/tmp/a/libcudart.so.12",
+			Dev:      1,
+			Inode:    12,
+			Perms:    &procfs.ProcMapPermissions{Execute: true},
+		},
+		{
+			Pathname: "/opt/cuda/libcudart.so.13",
+			Dev:      1,
+			Inode:    13,
+			Perms:    &procfs.ProcMapPermissions{Execute: true},
+		},
+	}
+	tracer := stubTracer{uprobes: map[string]map[string][]*ebpfcommon.ProbeDesc{
+		"libcudart.so[>= 13]": {"cudaMalloc": {{}}},
+	}}
+
+	modules := (&instrumenter{}).uprobeModules(
+		&tracer,
+		123,
+		maps,
+		"/proc/123/exe",
+		42,
+		slog.Default(),
+	)
+
+	require.Len(t, modules, 1)
+	assert.Contains(t, modules, uint64(13))
+}
+
 func TestUprobesRecordsFallbackExecutableOnceForMultipleProbeMaps(t *testing.T) {
 	pid := app.PID(os.Getpid())
 	tracer := recordingStubTracer{

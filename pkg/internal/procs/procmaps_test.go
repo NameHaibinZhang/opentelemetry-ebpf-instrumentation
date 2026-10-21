@@ -27,6 +27,27 @@ func TestModulePathMatching(t *testing.T) {
 	assert.Nil(t, LibPath("libssl.so", maps))
 }
 
+func TestModulePathsReturnsAllUniqueMappings(t *testing.T) {
+	cuda12 := procPSFromPath("/tmp/a/libcudart.so.12")
+	cuda12.Dev = 1
+	cuda12.Inode = 12
+	cuda12Duplicate := procPSFromPath("/tmp/a/libcudart.so.12")
+	cuda12Duplicate.Dev = 1
+	cuda12Duplicate.Inode = 12
+	cuda13 := procPSFromPath("/opt/cuda/libcudart.so.13")
+	cuda13.Dev = 1
+	cuda13.Inode = 13
+	nonExecutable := procPSFromPath("/opt/cuda/libcudart.so.14")
+	nonExecutable.Dev = 1
+	nonExecutable.Inode = 14
+	nonExecutable.Perms.Execute = false
+
+	maps := []*procfs.ProcMap{cuda12, cuda12Duplicate, cuda13, nonExecutable}
+
+	assert.Equal(t, []*procfs.ProcMap{cuda12, cuda13}, LibPaths("libcudart.so", maps))
+	assert.Equal(t, cuda12, LibPath("libcudart.so", maps))
+}
+
 func makeProcFSMaps(paths []string) []*procfs.ProcMap {
 	res := []*procfs.ProcMap{}
 
