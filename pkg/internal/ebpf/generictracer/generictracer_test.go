@@ -463,7 +463,6 @@ func TestRubyUProbesAreVersionGated(t *testing.T) {
 type fakeServiceFilter struct {
 	current          map[uint32]map[app.PID]svc.Attrs
 	currentPIDsCalls *int
-	procPIDs         []app.PID
 }
 
 func (f fakeServiceFilter) AllowPID(app.PID, uint32, *exec.FileInfo, ebpfcommon.PIDType) {}
@@ -479,4 +478,4 @@ func (f fakeServiceFilter) CurrentPIDs(ebpfcommon.PIDType) map[uint32]map[app.PI
 	return f.current
 }
 
-func (f fakeServiceFilter) ProcPIDs(ebpfcommon.PIDType) []app.PID { return f.procPIDs }
+func (f fakeServiceFilter) ProcPIDs(ebpfcommon.PIDType) []app.PID { return nil }

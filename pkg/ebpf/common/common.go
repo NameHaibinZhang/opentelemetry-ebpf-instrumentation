@@ -342,6 +342,7 @@ type EBPFEventContext struct {
 	MapsLock         sync.Mutex
 	LoadLock         sync.Mutex
 	Capabilities     TracerCapability
+	ValidPids        ValidPidsBitmap
 
 	internalEventHandlersMu sync.RWMutex
 	internalEventHandlers   map[uint8]func(*ringbuf.Record) error

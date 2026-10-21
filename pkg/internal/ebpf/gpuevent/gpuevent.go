@@ -76,6 +76,7 @@ type Tracer struct {
 	deviceModelsMux  sync.RWMutex
 	// deviceModels maps host PIDs to their process-local CUDA device model names.
 	deviceModels map[app.PID]map[uint32]string
+	eventCtx     *ebpfcommon.EBPFEventContext
 }
 
 func New(pidFilter ebpfcommon.ServiceFilter, cfg *obi.Config, metrics imetrics.Reporter) *Tracer {
@@ -96,12 +97,30 @@ func New(pidFilter ebpfcommon.ServiceFilter, cfg *obi.Config, metrics imetrics.R
 	}
 }
 
+// valid_pids is also written by the generic tracer, but it is not loaded when
+// only CUDA processes are instrumented
+func (p *Tracer) rebuildValidPids() error {
+	if p.eventCtx == nil {
+		return nil
+	}
+
+	return p.eventCtx.ValidPids.Rebuild(p.bpfObjects.ValidPids, p.pidsFilter.ProcPIDs(ebpfcommon.PIDTypeKProbes))
+}
+
 func (p *Tracer) AllowPID(pid app.PID, ns uint32, fi *exec.FileInfo) {
 	p.pidsFilter.AllowPID(pid, ns, fi, ebpfcommon.PIDTypeKProbes)
+
+	if err := p.rebuildValidPids(); err != nil {
+		p.log.Error("rebuilding the BPF PID filter", "error", err)
+	}
 }
 
 func (p *Tracer) BlockPID(pid app.PID, ns uint32) {
 	p.pidsFilter.BlockPID(pid, ns)
+
+	if err := p.rebuildValidPids(); err != nil {
+		p.log.Error("rebuilding the BPF PID filter", "error", err)
+	}
 
 	if p.devices != nil {
 		p.devices.forget(pid)
@@ -361,6 +380,14 @@ func (p *Tracer) AlreadyInstrumentedLib(id uint64) bool {
 }
 
 func (p *Tracer) Run(ctx context.Context, ebpfEventContext *ebpfcommon.EBPFEventContext, eventsChan *msg.Queue[[]request.Span]) {
+	p.eventCtx = ebpfEventContext
+	if err := ebpfcommon.ValidateValidPidsMap(p.bpfObjects.ValidPids); err != nil {
+		p.log.Error("BPF PID filter map sizing is invalid, discovery filtering may not be enforced", "error", err)
+	}
+	if err := p.rebuildValidPids(); err != nil {
+		p.log.Error("setting up the BPF PID filter, discovery filtering may not be enforced", "error", err)
+	}
+
 	ebpfcommon.ForwardRingbuf(
 		&p.cfg.EBPF,
 		p.bpfObjects.GpuEvents,
@@ -640,7 +667,7 @@ func cudaDeviceName(raw [64]int8) string {
 	return string(name)
 }
 
-func (p *Tracer) SetEventContext(_ *ebpfcommon.EBPFEventContext) {}
+func (p *Tracer) SetEventContext(ctx *ebpfcommon.EBPFEventContext) { p.eventCtx = ctx }
 
 func (p *Tracer) Capabilities() ebpfcommon.TracerCapability { return 0 }
 

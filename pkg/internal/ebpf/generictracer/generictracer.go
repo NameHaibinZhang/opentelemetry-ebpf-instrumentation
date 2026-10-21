@@ -59,13 +59,10 @@ type Tracer struct {
 	jvmGenerations     sync.Map
 	iters              []*ebpfcommon.Iter
 	iterMu             sync.Mutex
-	// the valid_pids words as last written to the BPF map
-	validPids      []uint64
-	validPidsMu    sync.Mutex
-	seenNetns      *expirable.LRU[uint64, struct{}]
-	eventCtx       *ebpfcommon.EBPFEventContext
-	jvmUSDTManager ebpfcommon.USDTSpecManager
-	pythonRuntime  *pythonRuntimeController
+	seenNetns          *expirable.LRU[uint64, struct{}]
+	eventCtx           *ebpfcommon.EBPFEventContext
+	jvmUSDTManager     ebpfcommon.USDTSpecManager
+	pythonRuntime      *pythonRuntimeController
 }
 
 func tlog() *slog.Logger {
@@ -75,8 +72,6 @@ func tlog() *slog.Logger {
 const (
 	seenNetnsCacheLen = 1024
 	seenNetnsTTL      = 5 * time.Minute
-
-	validPidsWords = uint32(ebpfcommon.BpfValidPidsSizeK_validPidsWords)
 )
 
 func New(pidFilter ebpfcommon.ServiceFilter, cfg *obi.Config, metrics imetrics.Reporter) *Tracer {
@@ -98,61 +93,12 @@ func New(pidFilter ebpfcommon.ServiceFilter, cfg *obi.Config, metrics imetrics.R
 	return tracer
 }
 
-// validateValidPidsMap ensures the loaded map matches the index space written
-// by rebuildValidPids: a smaller map has no words for the highest pids, which
-// valid_pid() then rejects.
-func (p *Tracer) validateValidPidsMap() error {
-	if got := p.bpfObjects.ValidPids.MaxEntries(); got != validPidsWords {
-		return fmt.Errorf(
-			"valid_pids BPF map holds %d entries, expected %d: BPF and userspace PID filter constants have diverged",
-			got, validPidsWords)
-	}
-
-	return nil
-}
-
 func (p *Tracer) rebuildValidPids() error {
-	if p.bpfObjects.ValidPids == nil {
+	if p.eventCtx == nil {
 		return nil
 	}
 
-	p.validPidsMu.Lock()
-	defer p.validPidsMu.Unlock()
-
-	if p.validPids == nil {
-		p.validPids = make([]uint64, validPidsWords)
-	}
-
-	pids := p.pidsFilter.ProcPIDs(ebpfcommon.PIDTypeKProbes)
-	want := map[uint32]uint64{}
-	for _, pid := range pids {
-		if uint64(pid) >= uint64(validPidsWords)*64 {
-			p.log.Warn("pid beyond the BPF PID filter, it won't be instrumented", "pid", pid)
-			continue
-		}
-		want[uint32(pid/64)] |= 1 << (pid % 64)
-	}
-
-	for word, bits := range p.validPids {
-		if _, ok := want[uint32(word)]; bits != 0 && !ok {
-			want[uint32(word)] = 0
-		}
-	}
-
-	written := 0
-	for word, bits := range want {
-		if p.validPids[word] == bits {
-			continue
-		}
-		if err := p.bpfObjects.ValidPids.Put(word, bits); err != nil {
-			return fmt.Errorf("writing word %d of the BPF PID filter: %w", word, err)
-		}
-		p.validPids[word] = bits
-		written++
-	}
-	p.log.Debug("BPF PID filter rebuilt", "pids", len(pids), "wordsWritten", written)
-
-	return nil
+	return p.eventCtx.ValidPids.Rebuild(p.bpfObjects.ValidPids, p.pidsFilter.ProcPIDs(ebpfcommon.PIDTypeKProbes))
 }
 
 func (p *Tracer) AllowPID(pid app.PID, ns uint32, fi *exec.FileInfo) {
@@ -754,7 +700,7 @@ func (p *Tracer) Run(
 	// At this point we now have loaded the bpf objects, which means we should insert any
 	// pids that are allowed into the bpf map
 	if p.bpfObjects.ValidPids != nil {
-		if err := p.validateValidPidsMap(); err != nil {
+		if err := ebpfcommon.ValidateValidPidsMap(p.bpfObjects.ValidPids); err != nil {
 			p.log.Error("BPF PID filter map sizing is invalid, discovery filtering may not be enforced", "error", err)
 		}
 		if err := p.rebuildValidPids(); err != nil {
