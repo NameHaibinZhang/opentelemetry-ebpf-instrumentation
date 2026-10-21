@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/obi/pkg/export/otel/otelcfg"
 	"go.opentelemetry.io/obi/pkg/instrumenter"
 	"go.opentelemetry.io/obi/pkg/kube/klogbridge"
+	"go.opentelemetry.io/obi/pkg/kube/kubeflags"
 	"go.opentelemetry.io/obi/pkg/obi"
 )
 
@@ -98,8 +99,9 @@ func loadConfigReader(file io.Reader) (*obi.Config, string, error) {
 
 // applyGPUOnlyProfile overrides the loaded configuration with the embedded
 // GPU-only profile: instrument every process with CUDA loaded, expose only GPU
-// metrics over the Prometheus endpoint, and disable OTLP push and the rest of
-// the application observability features.
+// metrics over the Prometheus endpoint, and disable OTLP push, Kubernetes
+// metadata unless explicitly enabled, and the rest of the application
+// observability features.
 func applyGPUOnlyProfile(config *obi.Config) {
 	config.EBPF.InstrumentCuda = obicfg.CudaModeOn
 	config.EBPF.ContextPropagation = obicfg.ContextPropagationDisabled
@@ -134,6 +136,10 @@ func applyGPUOnlyProfile(config *obi.Config) {
 
 	config.NetworkFlows.Enable = false
 	config.Metrics.Features = export.FeatureApplicationRED
+
+	if config.Attributes.Kubernetes.Enable == kubeflags.EnabledAutodetect {
+		config.Attributes.Kubernetes.Enable = kubeflags.EnabledFalse
+	}
 
 	if config.Prometheus.Port == 0 {
 		config.Prometheus.Port = defaultPrometheusPort

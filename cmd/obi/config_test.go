@@ -18,6 +18,7 @@ import (
 	attr "go.opentelemetry.io/obi/pkg/export/attributes/names"
 	"go.opentelemetry.io/obi/pkg/export/instrumentations"
 	"go.opentelemetry.io/obi/pkg/export/otel/otelcfg"
+	"go.opentelemetry.io/obi/pkg/kube/kubeflags"
 	"go.opentelemetry.io/obi/pkg/obi"
 	"go.opentelemetry.io/obi/pkg/transform"
 )
@@ -373,4 +374,23 @@ func TestLoadRoute53IntegrationConfig(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, selector.For(attributes.HTTPClientDuration), attr.Server)
+}
+
+func TestGPUOnlyProfileDisablesKubernetesMetadataByDefault(t *testing.T) {
+	cfg, _, err := loadConfigReader(nil)
+	require.NoError(t, err)
+
+	applyGPUOnlyProfile(cfg)
+
+	require.Equal(t, kubeflags.EnabledFalse, cfg.Attributes.Kubernetes.Enable)
+}
+
+func TestGPUOnlyProfileKeepsExplicitKubernetesMetadata(t *testing.T) {
+	t.Setenv("OTEL_EBPF_KUBE_METADATA_ENABLE", "true")
+	cfg, _, err := loadConfigReader(nil)
+	require.NoError(t, err)
+
+	applyGPUOnlyProfile(cfg)
+
+	require.Equal(t, kubeflags.EnabledTrue, cfg.Attributes.Kubernetes.Enable)
 }
