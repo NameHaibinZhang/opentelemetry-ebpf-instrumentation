@@ -1,0 +1,52 @@
+ARG TAG=0.2.17@sha256:1ae9406f2566e32ccf5d8ba8e5ff0586a322300ae82870988ad605429021174a
+ARG BASE_IMAGE=debian:trixie-slim
+
+# Fork-specific image: same build as the upstream Dockerfile, but the runtime
+# stage is a glibc base so that the host nvidia-smi injected by the NVIDIA
+# container runtime (built against glibc >= 2.38) can execute inside the
+# container. The upstream scratch image fails with a missing ELF interpreter.
+FROM ghcr.io/open-telemetry/obi-generator:${TAG} AS builder
+
+ARG TARGETARCH
+ARG RELEASE_VERSION=unset
+ARG RELEASE_REVISION=unset
+
+ENV GOARCH=$TARGETARCH
+
+WORKDIR /src
+
+RUN apk add make git bash
+
+COPY go.mod go.sum ./
+# Cache module cache.
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+COPY bpf/ bpf/
+COPY cmd/ cmd/
+COPY internal/goabi/ internal/goabi/
+COPY internal/goversion/ internal/goversion/
+COPY internal/config/ internal/config/
+COPY pkg/ pkg/
+COPY Makefile ./
+
+# Build
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg \
+	/generate.sh \
+	&& make compile RELEASE_VERSION=${RELEASE_VERSION} RELEASE_REVISION=${RELEASE_REVISION}
+
+# glibc runtime (2.41) so the injected nvidia-smi can run; the CA bundle is
+# copied from the builder so the runtime stage needs no network.
+FROM ${BASE_IMAGE}
+
+LABEL maintainer="The OpenTelemetry Authors"
+
+WORKDIR /
+
+COPY --from=builder /src/bin/obi .
+COPY LICENSE NOTICE ./
+COPY NOTICES ./NOTICES
+
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+
+ENTRYPOINT [ "/obi" ]

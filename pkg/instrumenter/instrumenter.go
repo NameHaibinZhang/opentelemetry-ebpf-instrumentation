@@ -101,6 +101,10 @@ func runWithContextInfo(
 
 	startHealthCheck(ctx, g, cfg.HealthCheck)
 
+	if ctxInfo.Prometheus != nil && cfg.EBPF.CudaInstrumentationEnabled() && cfg.Prometheus.EndpointEnabled() {
+		startGPUNodeMetrics(ctx, ctxInfo.Prometheus, cfg.Prometheus.Port, cfg.Prometheus.Path)
+	}
+
 	if app {
 		g.Go(func() error {
 			if err := setupAppO11y(ctx, ctxInfo, cfg, selection); err != nil {
