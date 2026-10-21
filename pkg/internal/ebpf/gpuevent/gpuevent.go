@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"strings"
 	"sync"
 
 	"github.com/cilium/ebpf"
@@ -71,6 +72,7 @@ type Tracer struct {
 	instrumentedLibs ebpfcommon.InstrumentedLibsT
 	libsMux          sync.Mutex
 	pidMap           map[pidKey]uint64
+	devices          *gpuInventory
 	deviceModelsMux  sync.RWMutex
 	// deviceModels maps host PIDs to their process-local CUDA device model names.
 	deviceModels map[app.PID]map[uint32]string
@@ -89,6 +91,7 @@ func New(pidFilter ebpfcommon.ServiceFilter, cfg *obi.Config, metrics imetrics.R
 		instrumentedLibs: make(ebpfcommon.InstrumentedLibsT),
 		libsMux:          sync.Mutex{},
 		pidMap:           map[pidKey]uint64{},
+		devices:          newGPUInventory(),
 		deviceModels:     map[app.PID]map[uint32]string{},
 	}
 }
@@ -99,6 +102,10 @@ func (p *Tracer) AllowPID(pid app.PID, ns uint32, fi *exec.FileInfo) {
 
 func (p *Tracer) BlockPID(pid app.PID, ns uint32) {
 	p.pidsFilter.BlockPID(pid, ns)
+
+	if p.devices != nil {
+		p.devices.forget(pid)
+	}
 
 	p.deviceModelsMux.Lock()
 	delete(p.deviceModels, pid)
@@ -527,29 +534,97 @@ func (p *Tracer) readGPUCudaDeviceEventIntoSpan(record *ringbuf.Record) (request
 	return request.Span{}, true, nil
 }
 
+// applyDeviceIdentity fills the CUDA device attributes of the span. The event
+// carries the device identity only when the thread's current device was
+// observed while OBI was attached, so the identity of processes that selected
+// their device earlier is resolved from procfs and CUDA_VISIBLE_DEVICES.
 func (p *Tracer) applyDeviceIdentity(span *request.Span, device BpfCudaDeviceT) {
+	index := device.Index
+	uuid := cudaUUIDString(device.Uuid)
+	model := p.deviceModel(span.Pid.HostPID, index)
+
 	if device.Known == 0 {
-		return
+		// The event index of an unobserved device is not meaningful. CUDA
+		// starts every thread on its default device, which is unambiguous only
+		// when the process sees a single GPU.
+		visible, ok := p.singleVisibleDevice(span.Pid.HostPID)
+		if !ok {
+			return
+		}
+		index = 0
+		uuid = visible.UUID
+		model = visible.Model
+	} else {
+		uuid, model = p.completeDeviceIdentity(span.Pid.HostPID, index, uuid, model)
 	}
 
 	span.CudaDeviceKnown = true
-	span.CudaDeviceIndex = device.Index
-	span.CudaDeviceUUID = cudaUUIDString(device.Uuid)
+	span.CudaDeviceIndex = index
+	span.CudaDeviceUUID = withGPUPrefix(uuid)
+	span.CudaDeviceModel = model
+}
 
+// withGPUPrefix renders a device UUID the way nvidia-smi does. The procfs
+// inventory stores bare UUIDs while eBPF events already carry the prefix.
+func withGPUPrefix(uuid string) string {
+	if uuid == "" || strings.HasPrefix(uuid, gpuUUIDPrefix) {
+		return uuid
+	}
+
+	return gpuUUIDPrefix + uuid
+}
+
+func (p *Tracer) deviceModel(pid app.PID, index uint32) string {
 	p.deviceModelsMux.RLock()
-	span.CudaDeviceModel = p.deviceModels[span.Pid.HostPID][device.Index]
-	p.deviceModelsMux.RUnlock()
+	defer p.deviceModelsMux.RUnlock()
+
+	return p.deviceModels[pid][index]
+}
+
+// completeDeviceIdentity fills the parts of a known device identity that were
+// not observed, from the host GPU inventory.
+func (p *Tracer) completeDeviceIdentity(pid app.PID, index uint32, uuid, model string) (string, string) {
+	if p.devices == nil {
+		return uuid, model
+	}
+
+	if uuid == "" {
+		device, ok := p.devices.resolve(pid, index)
+		if !ok {
+			return uuid, model
+		}
+		if model == "" {
+			model = device.Model
+		}
+		return device.UUID, model
+	}
+
+	if model == "" {
+		if device, ok := p.devices.byUUID(uuid); ok {
+			model = device.Model
+		}
+	}
+
+	return uuid, model
+}
+
+func (p *Tracer) singleVisibleDevice(pid app.PID) (gpuDevice, bool) {
+	if p.devices == nil {
+		return gpuDevice{}, false
+	}
+
+	return p.devices.singleVisible(pid)
 }
 
 // cudaUUIDString renders the raw bytes of a device UUID the way nvidia-smi
-// prints them behind its "GPU-" prefix. An all-zero UUID means the identity of
-// the device was never observed, which maps to the empty string.
+// prints them, including its "GPU-" prefix. An all-zero UUID means the identity
+// of the device was never observed, which maps to the empty string.
 func cudaUUIDString(raw [16]uint8) string {
 	if raw == [16]uint8{} {
 		return ""
 	}
 
-	return fmt.Sprintf("%x-%x-%x-%x-%x", raw[0:4], raw[4:6], raw[6:8], raw[8:10], raw[10:16])
+	return gpuUUIDPrefix + fmt.Sprintf("%x-%x-%x-%x-%x", raw[0:4], raw[4:6], raw[6:8], raw[8:10], raw[10:16])
 }
 
 // cudaDeviceName trims the NUL padding of the fixed-size device model name.

@@ -51,6 +51,8 @@ func (d dummyCriterion) RangePodLabels() iter.Seq2[string, services.StringMatche
 
 func (d dummyCriterion) IsContainersOnly() bool { return false }
 
+func (d dummyCriterion) IsCudaOnly() bool { return false }
+
 func (d dummyCriterion) GetPathRegexp() services.StringMatcher { return nil }
 
 func (d dummyCriterion) GetCmdArgs() services.StringMatcher { return nil }

@@ -430,6 +430,7 @@
             {
               "cmd_args": {},
               "containers_only": false,
+              "cuda_only": false,
               "exe_path": {},
               "exports": {},
               "k8s_pod_annotations": null,
@@ -450,6 +451,7 @@
             {
               "cmd_args": {},
               "containers_only": false,
+              "cuda_only": false,
               "exe_path": {},
               "exports": {},
               "k8s_pod_annotations": null,
@@ -1200,6 +1202,10 @@
         "containers_only": {
           "type": "boolean",
           "description": "Restricts the discovery to processes which are running inside a container"
+        },
+        "cuda_only": {
+          "type": "boolean",
+          "description": "Restricts the discovery to processes that have loaded the CUDA runtime or driver libraries."
         },
         "exe_path": {
           "$ref": "#/$defs/GlobAttr",

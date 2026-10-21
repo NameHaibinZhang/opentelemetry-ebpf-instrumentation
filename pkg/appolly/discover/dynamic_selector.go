@@ -567,6 +567,7 @@ func (a *dynamicPIDCriteriaAdapter) GetPIDs() ([]app.PID, bool) {
 }
 func (a *dynamicPIDCriteriaAdapter) GetCmdArgs() services.StringMatcher { return &emptyMatcher{} }
 func (a *dynamicPIDCriteriaAdapter) IsContainersOnly() bool             { return false }
+func (a *dynamicPIDCriteriaAdapter) IsCudaOnly() bool                   { return false }
 func (a *dynamicPIDCriteriaAdapter) RangeMetadata() iter.Seq2[string, services.StringMatcher] {
 	return emptyMetadataSeq2
 }

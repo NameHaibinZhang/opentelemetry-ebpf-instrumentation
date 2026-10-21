@@ -23,9 +23,12 @@ import (
 	"go.opentelemetry.io/obi/cmd/obi/internal/configcmd"
 	"go.opentelemetry.io/obi/internal/config/convert"
 	"go.opentelemetry.io/obi/internal/config/schema"
+	"go.opentelemetry.io/obi/pkg/appolly/services"
 	"go.opentelemetry.io/obi/pkg/buildinfo"
 	obicfg "go.opentelemetry.io/obi/pkg/config"
+	"go.opentelemetry.io/obi/pkg/export"
 	"go.opentelemetry.io/obi/pkg/export/instrumentations"
+	"go.opentelemetry.io/obi/pkg/export/otel/otelcfg"
 	"go.opentelemetry.io/obi/pkg/instrumenter"
 	"go.opentelemetry.io/obi/pkg/kube/klogbridge"
 	"go.opentelemetry.io/obi/pkg/obi"
@@ -34,6 +37,8 @@ import (
 const (
 	configVersionV1 = "v1"
 	configVersionV2 = "v2"
+
+	defaultPrometheusPort = 9464
 )
 
 func loadConfig(configPath *string) (*obi.Config, string) {
@@ -91,6 +96,50 @@ func loadConfigReader(file io.Reader) (*obi.Config, string, error) {
 	return config, configVersionV1, nil
 }
 
+// applyGPUOnlyProfile overrides the loaded configuration with the embedded
+// GPU-only profile: instrument every process with CUDA loaded, expose only GPU
+// metrics over the Prometheus endpoint, and disable OTLP push and the rest of
+// the application observability features.
+func applyGPUOnlyProfile(config *obi.Config) {
+	config.EBPF.InstrumentCuda = obicfg.CudaModeOn
+	config.EBPF.ContextPropagation = obicfg.ContextPropagationDisabled
+	config.EBPF.LogEnricher.Services = nil
+
+	config.Discovery.Instrument = services.GlobDefinitionCriteria{{CudaOnly: true}}
+	config.Discovery.Services = nil
+	config.AutoTargetExe = services.GlobAttr{}
+	config.AutoTargetLanguage = services.GlobAttr{}
+	config.TargetPIDs = services.IntEnum{}
+	config.Port = services.IntEnum{}
+	config.Exec = services.RegexpAttr{}
+
+	gpuOnly := []instrumentations.Instrumentation{instrumentations.InstrumentationGPU}
+	config.Prometheus.Instrumentations = gpuOnly
+	config.Prometheus.DeprFeatures = 0
+	config.OTELMetrics.Instrumentations = gpuOnly
+	config.OTELMetrics.DeprFeatures = 0
+	config.Traces.Instrumentations = gpuOnly
+
+	config.OTELMetrics.MetricsExport = nil
+	config.OTELMetrics.CommonEndpoint = ""
+	config.OTELMetrics.MetricsEndpoint = ""
+	config.OTELMetrics.OTLPEndpointProvider = nil
+
+	config.Traces.TracesExport = nil
+	config.Traces.CommonEndpoint = ""
+	config.Traces.TracesEndpoint = ""
+	config.Traces.OTLPEndpointProvider = nil
+	config.Traces.Protocol = otelcfg.ProtocolUnset
+	config.Traces.TracesProtocol = otelcfg.ProtocolUnset
+
+	config.NetworkFlows.Enable = false
+	config.Metrics.Features = export.FeatureApplicationRED
+
+	if config.Prometheus.Port == 0 {
+		config.Prometheus.Port = defaultPrometheusPort
+	}
+}
+
 func main() {
 	if handled, exitCode := configcmd.MaybeRun(os.Args[1:], os.Stdout, os.Stderr); handled {
 		if exitCode != configcmd.ExitSuccess {
@@ -109,6 +158,7 @@ func main() {
 		configPath = &cfg
 	}
 	config, configVersion := loadConfig(configPath)
+	applyGPUOnlyProfile(config)
 	if err := lvl.UnmarshalText([]byte(config.LogLevel)); err != nil {
 		slog.Error("unknown log level specified, choices are [DEBUG, INFO, WARN, ERROR]", "error", err)
 		os.Exit(-1)

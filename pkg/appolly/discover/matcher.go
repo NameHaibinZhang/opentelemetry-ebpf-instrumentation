@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/obi/pkg/appolly/app"
 	"go.opentelemetry.io/obi/pkg/appolly/services"
 	ebpfcommon "go.opentelemetry.io/obi/pkg/ebpf/common"
+	"go.opentelemetry.io/obi/pkg/internal/procs"
 	"go.opentelemetry.io/obi/pkg/obi"
 	"go.opentelemetry.io/obi/pkg/pipe/msg"
 	"go.opentelemetry.io/obi/pkg/pipe/swarm"
@@ -230,7 +231,7 @@ func (m *Matcher) matchProcess(obj *ProcessAttrs, p *services.ProcessInfo, a ser
 		return false
 	}
 
-	if !a.GetPath().IsSet() && !a.GetLanguages().IsSet() && !a.GetCmdArgs().IsSet() && a.GetOpenPorts().Len() == 0 && len(obj.metadata) == 0 {
+	if !a.GetPath().IsSet() && !a.GetLanguages().IsSet() && !a.GetCmdArgs().IsSet() && a.GetOpenPorts().Len() == 0 && len(obj.metadata) == 0 && !a.IsCudaOnly() {
 		if !hasPIDs || len(pids) == 0 {
 			log.Debug("no Kube metadata, no local selection criteria. Ignoring")
 			return false
@@ -250,6 +251,10 @@ func (m *Matcher) matchProcess(obj *ProcessAttrs, p *services.ProcessInfo, a ser
 	}
 	if a.GetLanguages().IsSet() && !m.matchByLanguage(obj, a) {
 		log.Debug("executable language does not match", "languages", a.GetLanguages(), "type", obj.detectedType.String())
+		return false
+	}
+	if a.IsCudaOnly() && !processLoadsCuda(p.Pid) {
+		log.Debug("process does not load CUDA libraries")
 		return false
 	}
 	if a.IsContainersOnly() {
@@ -295,6 +300,16 @@ func (m *Matcher) matchByCommandArgs(p *services.ProcessInfo, a services.Selecto
 		return a.GetCmdArgs().MatchString(p.CmdArgs)
 	}
 	return false
+}
+
+// processLoadsCuda reports whether the process has mapped the CUDA runtime or
+// driver libraries, which are the uprobe targets of the GPU tracer.
+func processLoadsCuda(pid app.PID) bool {
+	maps, err := procs.FindLibMaps(pid)
+	if err != nil {
+		return false
+	}
+	return procs.LibPath("libcuda", maps) != nil
 }
 
 func (m *Matcher) matchByAttributes(actual *ProcessAttrs, required services.Selector) bool {

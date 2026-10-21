@@ -181,6 +181,8 @@ type Selector interface {
 	GetPIDs() ([]app.PID, bool)
 	GetCmdArgs() StringMatcher
 	IsContainersOnly() bool
+	// IsCudaOnly returns true when the selector matches processes that loaded CUDA libraries.
+	IsCudaOnly() bool
 	RangeMetadata() iter.Seq2[string, StringMatcher]
 	RangePodLabels() iter.Seq2[string, StringMatcher]
 	RangePodAnnotations() iter.Seq2[string, StringMatcher]

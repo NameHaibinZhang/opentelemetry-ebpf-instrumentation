@@ -30,6 +30,7 @@ func (dc GlobDefinitionCriteria) Validate() error {
 			len(dc[i].PIDs) == 0 &&
 			!dc[i].CmdArgs.IsSet() &&
 			!dc[i].ContainersOnly &&
+			!dc[i].CudaOnly &&
 			len(dc[i].Metadata) == 0 &&
 			len(dc[i].PodLabels) == 0 &&
 			len(dc[i].PodAnnotations) == 0 {
@@ -112,6 +113,9 @@ type GlobAttributes struct {
 
 	// ContainersOnly restricts the discovery to processes which are running inside a container
 	ContainersOnly bool `yaml:"containers_only"`
+
+	// CudaOnly restricts the discovery to processes that have loaded the CUDA runtime or driver libraries.
+	CudaOnly bool `yaml:"cuda_only"`
 
 	// Configures what to export. Allowed values are 'metrics', 'traces',
 	// or an empty array (disabled). An unspecified value (nil) will use the
@@ -205,6 +209,7 @@ func (ga *GlobAttributes) GetPathRegexp() StringMatcher           { return nilMa
 func (ga *GlobAttributes) GetOpenPorts() *IntEnum                 { return &ga.OpenPorts }
 func (ga *GlobAttributes) GetPIDs() ([]app.PID, bool)             { return ga.pids() }
 func (ga *GlobAttributes) IsContainersOnly() bool                 { return ga.ContainersOnly }
+func (ga *GlobAttributes) IsCudaOnly() bool                       { return ga.CudaOnly }
 func (ga *GlobAttributes) MetricsConfig() perapp.SvcMetricsConfig { return ga.Metrics }
 
 func (ga *GlobAttributes) RangeMetadata() iter.Seq2[string, StringMatcher] {

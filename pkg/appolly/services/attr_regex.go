@@ -205,6 +205,7 @@ func (a *RegexSelector) GetOpenPorts() *IntEnum                 { return &a.Open
 func (a *RegexSelector) GetPIDs() ([]app.PID, bool)             { return a.pids() }
 func (a *RegexSelector) GetCmdArgs() StringMatcher              { return &a.CmdArgs }
 func (a *RegexSelector) IsContainersOnly() bool                 { return a.ContainersOnly }
+func (a *RegexSelector) IsCudaOnly() bool                       { return false }
 func (a *RegexSelector) MetricsConfig() perapp.SvcMetricsConfig { return a.Metrics }
 func (a *RegexSelector) RangeMetadata() iter.Seq2[string, StringMatcher] {
 	return func(yield func(string, StringMatcher) bool) {
