@@ -320,43 +320,50 @@ func (ta *traceAttacher) getTracer(ctx context.Context, ie *ebpf.Instrumentable)
 	// builds a tracer for that executable
 	var programs []ebpf.Tracer
 	tracerType := ebpf.Generic
-	switch ie.Type {
-	case svc.InstrumentableGolang:
-		// gets all the possible supported tracers for a go program, and filters out
-		// those whose symbols are not present in the ELF functions list
-		if ta.Cfg.Discovery.SkipGoSpecificTracers || ie.InstrumentationError != nil || ie.Offsets == nil {
-			if !ta.Cfg.Discovery.SkipGoSpecificTracers {
-				if ie.InstrumentationError != nil {
-					ta.log.Warn("Unsupported Go program detected, using generic instrumentation", "error", ie.InstrumentationError)
-				} else if ie.Offsets == nil {
-					ta.log.Warn("Go program with null offsets detected, using generic instrumentation")
-				}
-			}
-			if ta.reusableTracer != nil {
-				// We need to do more than monitor PIDs. It's possible that this new
-				// instance of the executable has different DLLs loaded, e.g. libssl.so.
-				return ta.reuseTracer(ctx, ta.reusableTracer, ie)
-			} else {
-				programs = ta.withCommonTracersGroup(newGenericTracersGroup(ta.EbpfEventContext.CommonPIDsFilter, ta.Cfg, ta.Metrics))
-			}
-		} else {
-			if ta.reusableGoTracer != nil {
-				return ta.reuseTracer(ctx, ta.reusableGoTracer, ie)
-			}
-			tracerType = ebpf.Go
-			programs = ta.withCommonTracersGroup(newGoTracersGroup(
-				ta.EbpfEventContext.CommonPIDsFilter,
-				ta.Cfg,
-				ta.Metrics,
-			))
-		}
-	case svc.InstrumentableNodejs, svc.InstrumentableDeno, svc.InstrumentableJava, svc.InstrumentableJavaNative, svc.InstrumentableRuby, svc.InstrumentablePython, svc.InstrumentableDotnet, svc.InstrumentableGeneric, svc.InstrumentableRust, svc.InstrumentablePHP, svc.InstrumentableCPP:
+	if cudaOnlyMode(ta.Cfg) {
 		if ta.reusableTracer != nil {
 			return ta.reuseTracer(ctx, ta.reusableTracer, ie)
 		}
-		programs = ta.withCommonTracersGroup(newGenericTracersGroup(ta.EbpfEventContext.CommonPIDsFilter, ta.Cfg, ta.Metrics))
-	default:
-		ta.log.Warn("unexpected instrumentable type. This is basically a bug", "type", ie.Type)
+		programs = ta.withCommonTracersGroup(nil)
+	} else {
+		switch ie.Type {
+		case svc.InstrumentableGolang:
+			// gets all the possible supported tracers for a go program, and filters out
+			// those whose symbols are not present in the ELF functions list
+			if ta.Cfg.Discovery.SkipGoSpecificTracers || ie.InstrumentationError != nil || ie.Offsets == nil {
+				if !ta.Cfg.Discovery.SkipGoSpecificTracers {
+					if ie.InstrumentationError != nil {
+						ta.log.Warn("Unsupported Go program detected, using generic instrumentation", "error", ie.InstrumentationError)
+					} else if ie.Offsets == nil {
+						ta.log.Warn("Go program with null offsets detected, using generic instrumentation")
+					}
+				}
+				if ta.reusableTracer != nil {
+					// We need to do more than monitor PIDs. It's possible that this new
+					// instance of the executable has different DLLs loaded, e.g. libssl.so.
+					return ta.reuseTracer(ctx, ta.reusableTracer, ie)
+				} else {
+					programs = ta.withCommonTracersGroup(newGenericTracersGroup(ta.EbpfEventContext.CommonPIDsFilter, ta.Cfg, ta.Metrics))
+				}
+			} else {
+				if ta.reusableGoTracer != nil {
+					return ta.reuseTracer(ctx, ta.reusableGoTracer, ie)
+				}
+				tracerType = ebpf.Go
+				programs = ta.withCommonTracersGroup(newGoTracersGroup(
+					ta.EbpfEventContext.CommonPIDsFilter,
+					ta.Cfg,
+					ta.Metrics,
+				))
+			}
+		case svc.InstrumentableNodejs, svc.InstrumentableDeno, svc.InstrumentableJava, svc.InstrumentableJavaNative, svc.InstrumentableRuby, svc.InstrumentablePython, svc.InstrumentableDotnet, svc.InstrumentableGeneric, svc.InstrumentableRust, svc.InstrumentablePHP, svc.InstrumentableCPP:
+			if ta.reusableTracer != nil {
+				return ta.reuseTracer(ctx, ta.reusableTracer, ie)
+			}
+			programs = ta.withCommonTracersGroup(newGenericTracersGroup(ta.EbpfEventContext.CommonPIDsFilter, ta.Cfg, ta.Metrics))
+		default:
+			ta.log.Warn("unexpected instrumentable type. This is basically a bug", "type", ie.Type)
+		}
 	}
 	if len(programs) == 0 {
 		ta.log.Warn("no instrumentable functions found. Ignoring", "pid", ie.FileInfo.Pid(), "cmd", ie.FileInfo.CmdExePath())
@@ -433,6 +440,20 @@ func (ta *traceAttacher) dropUnloadedTracers(loadedPrograms []ebpf.Tracer) {
 		return !slices.Contains(loadedPrograms, ct)
 	})
 	ta.commonTracersLoaded = true
+}
+
+// cudaOnlyMode reports whether every instrumentation selector is restricted to CUDA
+// processes, in which case only the common tracers (e.g. gpuevent) are needed
+func cudaOnlyMode(cfg *obi.Config) bool {
+	if len(cfg.Discovery.Instrument) == 0 {
+		return false
+	}
+	for i := range cfg.Discovery.Instrument {
+		if !cfg.Discovery.Instrument[i].CudaOnly {
+			return false
+		}
+	}
+	return true
 }
 
 func (ta *traceAttacher) withCommonTracersGroup(tracers []ebpf.Tracer) []ebpf.Tracer {

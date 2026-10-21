@@ -312,6 +312,18 @@ func (pa *pollAccounter) processTooNew(proc ProcessAttrs) bool {
 	return proc.processAge != time.Duration(0) && (proc.processAge < pa.cfg.Discovery.MinProcessAge)
 }
 
+func (pa *pollAccounter) cudaOnlyCriteria() bool {
+	if len(pa.findingCriteria) == 0 {
+		return false
+	}
+	for _, s := range pa.findingCriteria {
+		if !s.IsCudaOnly() {
+			return false
+		}
+	}
+	return true
+}
+
 // snapshot compares the current processes with the status of the previous poll
 // and forwards a list of process creation/deletion events
 func (pa *pollAccounter) snapshot(fetchedProcs map[app.PID]ProcessAttrs) []Event[ProcessAttrs] {
@@ -322,8 +334,14 @@ func (pa *pollAccounter) snapshot(fetchedProcs map[app.PID]ProcessAttrs) []Event
 	currentPidPorts := make(map[pidPort]ProcessAttrs, len(fetchedProcs))
 	reportedProcs := map[app.PID]struct{}{}
 	notReadyProcs := map[app.PID]struct{}{}
+	cudaOnly := pa.cudaOnlyCriteria()
 	// notify processes that are new, or already existed but have a new connection
 	for pid, proc := range fetchedProcs {
+		// keep re-polling processes that may load libcuda later
+		if cudaOnly && !processLoadsCuda(pid) {
+			notReadyProcs[pid] = struct{}{}
+			continue
+		}
 		// if the process does not have open ports, we might still notify it
 		// for example, if it's a client with ephemeral connections, which might be later matched by executable name
 		if len(proc.openPorts) == 0 {
