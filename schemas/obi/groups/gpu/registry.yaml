@@ -63,6 +63,7 @@ attribute_groups:
     stability: development
     attributes:
       - ref: process.pid
+        requirement_level: recommended
       - ref: cuda.memcpy.kind
       - ref: cuda.device.index
       - ref: cuda.device.uuid
