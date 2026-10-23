@@ -47,6 +47,9 @@ attributes:
       once a response is observed.
     examples: [false]
   - key: gen_ai.span.kind
+    annotations:
+      obi:
+        upstream_deviation: upstream defines no attribute for this coarse GenAI span classification
     type: string
     stability: development
     brief: >
