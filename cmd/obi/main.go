@@ -103,7 +103,9 @@ func loadConfigReader(file io.Reader) (*obi.Config, string, error) {
 // metadata unless explicitly enabled, and the rest of the application
 // observability features.
 func applyGPUOnlyProfile(config *obi.Config) {
-	config.EBPF.InstrumentCuda = obicfg.CudaModeOn
+	if config.EBPF.InstrumentCuda == obicfg.CudaModeAuto {
+		config.EBPF.InstrumentCuda = obicfg.CudaModeOn
+	}
 	config.EBPF.ContextPropagation = obicfg.ContextPropagationDisabled
 	config.EBPF.LogEnricher.Services = nil
 

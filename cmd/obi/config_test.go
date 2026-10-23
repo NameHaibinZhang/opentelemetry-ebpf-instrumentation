@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/obi/internal/config/schema"
+	obicfg "go.opentelemetry.io/obi/pkg/config"
 	"go.opentelemetry.io/obi/pkg/export/attributes"
 	attr "go.opentelemetry.io/obi/pkg/export/attributes/names"
 	"go.opentelemetry.io/obi/pkg/export/instrumentations"
@@ -393,4 +394,23 @@ func TestGPUOnlyProfileKeepsExplicitKubernetesMetadata(t *testing.T) {
 	applyGPUOnlyProfile(cfg)
 
 	require.Equal(t, kubeflags.EnabledTrue, cfg.Attributes.Kubernetes.Enable)
+}
+
+func TestGPUOnlyProfileEnablesCUDAByDefault(t *testing.T) {
+	cfg, _, err := loadConfigReader(nil)
+	require.NoError(t, err)
+
+	applyGPUOnlyProfile(cfg)
+
+	require.Equal(t, obicfg.CudaModeOn, cfg.EBPF.InstrumentCuda)
+}
+
+func TestGPUOnlyProfileKeepsExplicitCUDADisabled(t *testing.T) {
+	t.Setenv("OTEL_EBPF_INSTRUMENT_CUDA", "off")
+	cfg, _, err := loadConfigReader(nil)
+	require.NoError(t, err)
+
+	applyGPUOnlyProfile(cfg)
+
+	require.Equal(t, obicfg.CudaModeOff, cfg.EBPF.InstrumentCuda)
 }
