@@ -10,6 +10,7 @@ import (
 	"sync"
 	"text/template"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	"go.opentelemetry.io/obi/pkg/cloud"
@@ -30,6 +31,12 @@ import (
 	"go.opentelemetry.io/obi/pkg/pipe/global"
 	statsagent "go.opentelemetry.io/obi/pkg/statsolly/agent"
 	"go.opentelemetry.io/obi/pkg/transform"
+)
+
+// Constant label appended to every series exposed on the Prometheus endpoints.
+const (
+	promScopeLabel = "otel_scope_name"
+	promScopeName  = "stats_ebpf_events"
 )
 
 // Run in the foreground process. This is a blocking function and won't exit
@@ -246,7 +253,9 @@ func BuildCommonContextInfo(
 		return nil, err
 	}
 
-	promMgr := &connector.PrometheusManager{}
+	promMgr := &connector.PrometheusManager{
+		ConstLabels: prometheus.Labels{promScopeLabel: promScopeName},
+	}
 	ctxInfo := &global.ContextInfo{
 		Prometheus:          promMgr,
 		OTELMetricsExporter: &otelcfg.MetricsExporterInstancer{Cfg: &config.OTELMetrics},
