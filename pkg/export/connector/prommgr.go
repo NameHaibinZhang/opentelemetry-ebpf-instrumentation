@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -29,6 +30,9 @@ func log() *slog.Logger {
 // PrometheusManager allows exporting metrics from different sources (instrumented metrics, internal metrics...)
 // sharing the same port and path, or using different ones, depending on the configuration provided by the registrars.
 type PrometheusManager struct {
+	// ConstLabels are appended to every series registered after they are set.
+	ConstLabels prometheus.Labels
+
 	mt sync.Mutex
 	// mux of each port that already has a listener, so a path registered later can be
 	// added to the running mux instead of needing a second listener
@@ -68,7 +72,7 @@ func (pm *PrometheusManager) Register(port int, path string, collectors ...prome
 		reg = prometheus.NewRegistry()
 		pm.registries.Put(port, path, reg)
 	}
-	reg.MustRegister(collectors...)
+	prometheus.WrapRegistererWith(pm.ConstLabels, reg).MustRegister(collectors...)
 }
 
 // StartHTTP serves metrics in background. Safe to call repeatedly: each call serves what is
@@ -99,7 +103,7 @@ func (pm *PrometheusManager) StartHTTP(ctx context.Context) {
 				Registry:          registry,
 				EnableOpenMetrics: true,
 			})
-			promHandler = wrapDebugHandler(log, promHandler)
+			promHandler = wrapLogHandler(log.With("port", port, "path", path), promHandler)
 			promHandler = wrapInstrumentedHandler(pm.metrics, port, path, promHandler)
 			// ServeMux takes its own write lock, so this is safe while it serves
 			mux.Handle(path, promHandler)
@@ -124,14 +128,35 @@ func wrapInstrumentedHandler(metrics internalIntrumenter, port int, path string,
 	}
 }
 
-func wrapDebugHandler(log *slog.Logger, promHandler http.Handler) http.HandlerFunc {
-	// we don't wrap anything for if the log level is not debug or lower
-	if !log.Enabled(context.TODO(), slog.LevelDebug) {
-		return promHandler.ServeHTTP
-	}
+// statusRecorder captures the status code and body size written by the wrapped handler.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	n, err := r.ResponseWriter.Write(b)
+	r.bytes += n
+	return n, err
+}
+
+func wrapLogHandler(log *slog.Logger, promHandler http.Handler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
-		log.Debug("received metrics request", "uri", req.RequestURI, "remoteAddr", req.RemoteAddr)
-		promHandler.ServeHTTP(rw, req)
+		started := time.Now()
+		rec := &statusRecorder{ResponseWriter: rw, status: http.StatusOK}
+		promHandler.ServeHTTP(rec, req)
+		log.Info("metrics scraped",
+			"remoteAddr", req.RemoteAddr,
+			"userAgent", req.UserAgent(),
+			"status", rec.status,
+			"bytes", rec.bytes,
+			"duration", time.Since(started).Round(time.Millisecond))
 	}
 }
 

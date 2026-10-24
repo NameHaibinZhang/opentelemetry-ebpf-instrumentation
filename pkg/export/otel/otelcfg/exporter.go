@@ -63,6 +63,8 @@ func (i *MetricsExporterInstancer) Instantiate(ctx context.Context) (sdkmetric.E
 		return nil, fmt.Errorf("invalid protocol value: %q. Accepted values are: %s, %s, %s",
 			proto, ProtocolGRPC, ProtocolHTTPJSON, ProtocolHTTPProtobuf)
 	}
+	endpoint, _ := i.Cfg.OTLPMetricsEndpoint()
+	i.instance = newLoggingMetricsExporter(i.instance, i.Cfg.GetProtocol(), endpoint)
 	return i.instance, nil
 }
 

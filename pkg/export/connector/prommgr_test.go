@@ -120,3 +120,19 @@ func TestStartHTTP_IsIdempotentPerPortAndPath(t *testing.T) {
 
 	assert.True(t, scrapes(t, port, "/metrics"), "port should still be served after repeated StartHTTP calls")
 }
+
+func TestRegister_AppendsConstLabels(t *testing.T) {
+	pm := &PrometheusManager{ConstLabels: prometheus.Labels{"otel_scope_name": "stats_ebpf_events"}}
+	pm.Register(9999, "/metrics", testGauge("labeled_metric"))
+
+	reg, ok := pm.registries.Get(9999, "/metrics")
+	require.True(t, ok)
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	require.Len(t, families, 1)
+
+	labels := families[0].GetMetric()[0].GetLabel()
+	require.Len(t, labels, 1)
+	assert.Equal(t, "otel_scope_name", labels[0].GetName())
+	assert.Equal(t, "stats_ebpf_events", labels[0].GetValue())
+}
