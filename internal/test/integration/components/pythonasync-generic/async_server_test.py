@@ -34,6 +34,14 @@ def _response(status: int, body: dict, keep_alive: bool) -> bytes:
     return headers.encode() + payload
 
 
+def _content_length(headers: str) -> int:
+    for line in headers.split("\r\n"):
+        name, _, value = line.partition(":")
+        if name.strip() == "content-length":
+            return int(value.strip())
+    return 0
+
+
 async def handle_sequential(req_id: str):
     codes = []
     for call in (1, 2, 3):
@@ -124,6 +132,12 @@ async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.Stream
                 break
             _, path, _ = fields
             keep_alive = "connection: close" not in headers
+
+            # Drain the request body so it is not parsed as the next request line
+            try:
+                await reader.readexactly(_content_length(headers))
+            except (asyncio.IncompleteReadError, ConnectionResetError):
+                break
 
             try:
                 status, body = await dispatch(path)
