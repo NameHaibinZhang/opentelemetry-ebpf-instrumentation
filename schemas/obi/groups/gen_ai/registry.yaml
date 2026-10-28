@@ -227,6 +227,9 @@ attributes:
       semconv defines an official embedding input-count attribute.
 
   - key: gen_ai.span.kind
+    annotations:
+      obi:
+        upstream_deviation: upstream defines no coarse GenAI span-kind classification
     type: string
     stability: development
     brief: >
