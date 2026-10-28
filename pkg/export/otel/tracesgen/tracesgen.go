@@ -1298,6 +1298,7 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			ai := span.GenAI.Ollama
 			attrs = append(attrs, semconv.GenAIProviderNameKey.String("ollama"))
 			attrs = append(attrs, semconv.GenAIOperationNameKey.String(genAIOperationName(ai.OperationName)))
+			attrs = append(attrs, genAISpanKindKey.String(genAISpanKind(ai.OperationName)))
 			attrs = appendIfSet(attrs, semconv.GenAIRequestModel, ai.Request.Model)
 			if ai.ResponseModel != "" {
 				attrs = append(attrs, semconv.GenAIResponseModel(ai.ResponseModel))
@@ -1333,6 +1334,7 @@ func traceAttributesSelectorInternal(span *request.Span, optionalAttrs map[attr.
 			ai := span.GenAI.Cohere
 			attrs = append(attrs, semconv.GenAIProviderNameCohere)
 			attrs = append(attrs, semconv.GenAIOperationNameKey.String(genAIOperationName(ai.OperationName)))
+			attrs = append(attrs, genAISpanKindKey.String(genAISpanKind(ai.OperationName)))
 			attrs = appendIfSet(attrs, semconv.GenAIResponseID, ai.ID)
 			attrs = appendIfSet(attrs, semconv.GenAIRequestModel, ai.Request.Model)
 			attrs = appendIfSet(attrs, semconv.GenAIResponseModel, span.GenAIResponseModel())
