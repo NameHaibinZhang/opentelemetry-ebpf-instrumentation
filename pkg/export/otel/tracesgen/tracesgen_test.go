@@ -1601,6 +1601,7 @@ func TestCohereChatAttributes(t *testing.T) {
 	for key, expected := range map[attribute.Key]any{
 		semconv.GenAIProviderNameKey:            "cohere",
 		semconv.GenAIOperationNameKey:           "chat",
+		genAISpanKindKey:                        "LLM",
 		semconv.GenAIResponseIDKey:              "c14c80c3",
 		semconv.GenAIRequestModelKey:            "command-a-03-2025",
 		semconv.GenAIResponseModelKey:           "command-a-03-2025",
