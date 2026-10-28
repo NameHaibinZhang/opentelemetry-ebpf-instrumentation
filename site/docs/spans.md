@@ -264,6 +264,7 @@ Name, from the first template that applies: `{gen_ai.operation.name} {gen_ai.req
 | `gen_ai.request.encoding_formats` | string[] | `recommended`: if the request set encoding formats | development | The encoding formats requested in an embeddings operation, if specified. | ["base64"]; ["float","binary"] |
 | `gen_ai.request.model` | string | `conditionally_required`: if the request named a model | development | The name of the GenAI model a request is being made to. | gpt-4 |
 | `gen_ai.response.model` | string | `recommended` | development | The name of the model that generated the response. | gpt-4-0613 |
+| `gen_ai.span.kind` | string | `required` | development | Coarse classification of the GenAI span, derived from `gen_ai.operation.name` (LLM / EMBEDDING / TOOL / RETRIEVER / RERANKER). | LLM; EMBEDDING |
 | `gen_ai.usage.input_tokens` | int | `recommended`: if the provider reported token usage | development | The number of tokens used in the GenAI input (prompt). | 100 |
 | `gen_ai.usage.output_tokens` | int | `recommended`: if the provider reported token usage | development | The number of tokens used in the GenAI response (completion). | 180 |
 | `network.peer.address` | string | `recommended`: if the peer address is an IP rather than a name | stable | Peer address of the network connection - IP address or Unix domain socket name. | 10.1.2.80; /tmp/my.sock |
@@ -311,6 +312,7 @@ Name, from the first template that applies: `{gen_ai.operation.name} {gen_ai.req
 | `gen_ai.response.finish_reasons` | string[] | `recommended`: if the response reported finish reasons | development | Array of reasons the model stopped generating tokens, corresponding to each generation received. | ["stop"]; ["stop","length"] |
 | `gen_ai.response.id` | string | `recommended`: if the response carried an id | development | The unique identifier for the completion. | chatcmpl-123 |
 | `gen_ai.response.model` | string | `recommended` | development | The name of the model that generated the response. | gpt-4-0613 |
+| `gen_ai.span.kind` | string | `required` | development | Coarse classification of the GenAI span, derived from `gen_ai.operation.name` (LLM / EMBEDDING / TOOL / RETRIEVER / RERANKER). | LLM; EMBEDDING |
 | `gen_ai.system_instructions` | any | `opt_in` | development | The system message or instructions provided to the GenAI model separately from the chat history. | [   {     "type": "text",     "content": "You are an Agent that greet users, always use greetings tool to respond"   } ] ; [   {     "type": "text",     "content": "You are a language translator."   },   {     "type": "text",     "content": "Your mission is to translate text in English to French."   } ] |
 | `gen_ai.tool.definitions` | any | `opt_in` | development | The list of tool definitions available to the GenAI agent or model. | [   {     "type": "function",     "name": "get_current_weather",     "description": "Get the current weather in a given location",     "parameters": {       "type": "object",       "properties": {         "location": {           "type": "string",           "description": "The city and state, e.g. San Francisco, CA"         },         "unit": {           "type": "string",           "enum": [             "celsius",             "fahrenheit"           ]         }       },       "required": [         "location",         "unit"       ]     }   } ] |
 | `gen_ai.usage.cache_creation.input_tokens` | int | `recommended`: if the provider reported cache-creation token usage | development | The number of input tokens written to a provider-managed cache. | 25 |
@@ -351,6 +353,7 @@ Name, from the first template that applies: `{gen_ai.operation.name} {gen_ai.req
 | `gen_ai.rerank.top_n` | int | `conditionally_required`: if the request set a result count | development | Number of top results requested from a GenAI rerank operation. |  |
 | `gen_ai.response.id` | string | `recommended`: if the response carried an id | development | The unique identifier for the completion. | chatcmpl-123 |
 | `gen_ai.response.model` | string | `recommended` | development | The name of the model that generated the response. | gpt-4-0613 |
+| `gen_ai.span.kind` | string | `required` | development | Coarse classification of the GenAI span, derived from `gen_ai.operation.name` (LLM / EMBEDDING / TOOL / RETRIEVER / RERANKER). | LLM; EMBEDDING |
 | `gen_ai.usage.input_tokens` | int | `recommended`: if the provider reported token usage | development | The number of tokens used in the GenAI input (prompt). | 100 |
 | `gen_ai.usage.output_tokens` | int | `recommended`: if the provider reported token usage | development | The number of tokens used in the GenAI response (completion). | 180 |
 | `network.peer.address` | string | `recommended`: if the peer address is an IP rather than a name | stable | Peer address of the network connection - IP address or Unix domain socket name. | 10.1.2.80; /tmp/my.sock |
@@ -381,6 +384,7 @@ Name, from the first template that applies: `{gen_ai.operation.name} {gen_ai.dat
 | `gen_ai.request.top_k` | double | `recommended`: if the request set a result count | development | The top_k sampling setting for the GenAI request. | 1 |
 | `gen_ai.response.id` | string | `recommended`: if the response carried an id | development | The unique identifier for the completion. | chatcmpl-123 |
 | `gen_ai.response.model` | string | `recommended`: if the request or the response named a model | development | The name of the model that generated the response. | gpt-4-0613 |
+| `gen_ai.span.kind` | string | `required` | development | Coarse classification of the GenAI span, derived from `gen_ai.operation.name` (LLM / EMBEDDING / TOOL / RETRIEVER / RERANKER). | LLM; EMBEDDING |
 | `gen_ai.usage.input_tokens` | int | `recommended`: if the provider reported token usage | development | The number of tokens used in the GenAI input (prompt). | 100 |
 | `gen_ai.usage.output_tokens` | int | `recommended`: if the provider reported token usage | development | The number of tokens used in the GenAI response (completion). | 180 |
 | `network.peer.address` | string | `recommended`: if the peer address is an IP rather than a name | stable | Peer address of the network connection - IP address or Unix domain socket name. | 10.1.2.80; /tmp/my.sock |
