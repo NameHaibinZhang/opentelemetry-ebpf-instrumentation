@@ -85,15 +85,19 @@ type ProcessWatcherRescan struct {
 	// updates enabled, tracked PIDs are preserved for exit detection; otherwise
 	// they are forgotten (e.g. after AddK8sWorkload).
 	TargetsChanged <-chan struct{}
+	// CriteriaChanged is signaled when discovery criteria are hot-reloaded
+	// (e.g. from a ConfigMap watcher) and forgets all tracked PIDs.
+	CriteriaChanged <-chan struct{}
 }
 
 func (r ProcessWatcherRescan) enabled() bool {
-	return r.AddedPIDs != nil || r.TargetsChanged != nil
+	return r.AddedPIDs != nil || r.TargetsChanged != nil || r.CriteriaChanged != nil
 }
 
 // ProcessWatcherFunc polls every PollInterval for new processes and forwards either new or deleted process PIDs
 // as well as PIDs from processes that setup a new connection.
-// When rescan is enabled, the watcher re-emits processes for matching after selector or criteria changes.
+// When rescan is enabled, the watcher re-emits processes for matching after selector or criteria changes,
+// and forgets tracked processes after criteria hot-reloads.
 func ProcessWatcherFunc(
 	cfg *obi.Config,
 	ebpfContext *ebpfcommon.EBPFEventContext,
@@ -215,6 +219,7 @@ func (pa *pollAccounter) run(ctx context.Context) {
 // runRescanNotify handles requests to re-emit processes on the next poll.
 // AddedPIDs forgets only the given PIDs. TargetsChanged preserves tracked PIDs for
 // exit detection when criteria updates are enabled, and forgets them otherwise.
+// CriteriaChanged (criteria hot-reload) forgets everything.
 // Nil channels are inert in the select.
 func (pa *pollAccounter) runRescanNotify(ctx context.Context, log *slog.Logger) {
 	for {
@@ -237,6 +242,12 @@ func (pa *pollAccounter) runRescanNotify(ctx context.Context, log *slog.Logger) 
 				pa.forgetAll()
 			}
 			log.Debug("rescanning processes after selection targets changed")
+		case _, ok := <-pa.rescan.CriteriaChanged:
+			if !ok {
+				return
+			}
+			pa.forgetAll()
+			log.Info("criteria changed: cleared tracked processes for full re-discovery")
 		}
 	}
 }
