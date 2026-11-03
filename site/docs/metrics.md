@@ -1559,6 +1559,89 @@ Count of TCP connections that completed the three-way handshake, broken down by 
 | `src.port` | int | `opt_in` | development | Source TCP/UDP port. |  |
 | `src.zone` | string | `opt_in` | development | Zone label attached to the source side (e.g. cloud availability zone). | us-east-1a |
 
+## `process.cpu.time`
+
+OBI-emitted process.cpu.time
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| counter | s | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `cpu.mode` | enum | `required` | development | The mode of the CPU | user; system |
+| `process.command` | string | `recommended` | development | The command used to launch the process (i.e. the command name). On Linux based systems, can be set to the zeroth string in `proc/[pid]/cmdline`. On Windows, can be set to the first parameter extracted from `GetCommandLineW`. | cmd/otelcol |
+| `process.executable.path` | string | `opt_in` | development | The full path to the process executable. On Linux based systems, can be set to the target of `proc/[pid]/exe`. On Windows, can be set to the result of `GetProcessImageFileNameW`. | /usr/bin/cmd/otelcol |
+| `process.owner` | string | `opt_in` | development | The username of the user that owns the process. | root |
+| `process.parent_pid` | int | `opt_in` | development | Parent Process identifier (PPID). | 111 |
+| `process.pid` | int | `required` | development | Process identifier (PID). | 1234 |
+
+## `process.cpu.utilization`
+
+OBI-emitted process.cpu.utilization
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| gauge | 1 | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `cpu.mode` | enum | `required` | development | The mode of the CPU | user; system |
+| `process.command` | string | `recommended` | development | The command used to launch the process (i.e. the command name). On Linux based systems, can be set to the zeroth string in `proc/[pid]/cmdline`. On Windows, can be set to the first parameter extracted from `GetCommandLineW`. | cmd/otelcol |
+| `process.executable.path` | string | `opt_in` | development | The full path to the process executable. On Linux based systems, can be set to the target of `proc/[pid]/exe`. On Windows, can be set to the result of `GetProcessImageFileNameW`. | /usr/bin/cmd/otelcol |
+| `process.owner` | string | `opt_in` | development | The username of the user that owns the process. | root |
+| `process.parent_pid` | int | `opt_in` | development | Parent Process identifier (PPID). | 111 |
+| `process.pid` | int | `required` | development | Process identifier (PID). | 1234 |
+
+## `process.disk.io`
+
+OBI-emitted process.disk.io
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| counter | By | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `disk.io.direction` | enum | `required` | development | The disk IO operation direction. | read |
+| `process.command` | string | `recommended` | development | The command used to launch the process (i.e. the command name). On Linux based systems, can be set to the zeroth string in `proc/[pid]/cmdline`. On Windows, can be set to the first parameter extracted from `GetCommandLineW`. | cmd/otelcol |
+| `process.executable.path` | string | `opt_in` | development | The full path to the process executable. On Linux based systems, can be set to the target of `proc/[pid]/exe`. On Windows, can be set to the result of `GetProcessImageFileNameW`. | /usr/bin/cmd/otelcol |
+| `process.owner` | string | `opt_in` | development | The username of the user that owns the process. | root |
+| `process.parent_pid` | int | `opt_in` | development | Parent Process identifier (PPID). | 111 |
+| `process.pid` | int | `required` | development | Process identifier (PID). | 1234 |
+
+## `process.memory.usage`
+
+OBI-emitted process.memory.usage
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| updowncounter | By | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `process.command` | string | `recommended` | development | The command used to launch the process (i.e. the command name). On Linux based systems, can be set to the zeroth string in `proc/[pid]/cmdline`. On Windows, can be set to the first parameter extracted from `GetCommandLineW`. | cmd/otelcol |
+| `process.executable.path` | string | `opt_in` | development | The full path to the process executable. On Linux based systems, can be set to the target of `proc/[pid]/exe`. On Windows, can be set to the result of `GetProcessImageFileNameW`. | /usr/bin/cmd/otelcol |
+| `process.owner` | string | `opt_in` | development | The username of the user that owns the process. | root |
+| `process.parent_pid` | int | `opt_in` | development | Parent Process identifier (PPID). | 111 |
+| `process.pid` | int | `required` | development | Process identifier (PID). | 1234 |
+
+## `process.memory.virtual`
+
+OBI-emitted process.memory.virtual
+
+| Instrument | Unit | Stability |
+| --- | --- | --- |
+| updowncounter | By | development |
+
+| Attribute | Type | Requirement level | Stability | Description | Examples |
+| --- | --- | --- | --- | --- | --- |
+| `process.command` | string | `recommended` | development | The command used to launch the process (i.e. the command name). On Linux based systems, can be set to the zeroth string in `proc/[pid]/cmdline`. On Windows, can be set to the first parameter extracted from `GetCommandLineW`. | cmd/otelcol |
+| `process.executable.path` | string | `opt_in` | development | The full path to the process executable. On Linux based systems, can be set to the target of `proc/[pid]/exe`. On Windows, can be set to the result of `GetProcessImageFileNameW`. | /usr/bin/cmd/otelcol |
+| `process.owner` | string | `opt_in` | development | The username of the user that owns the process. | root |
+| `process.parent_pid` | int | `opt_in` | development | Parent Process identifier (PPID). | 111 |
+| `process.pid` | int | `required` | development | Process identifier (PID). | 1234 |
+
 ## `rpc.client.call.duration`
 
 OBI-emitted rpc.client.call.duration

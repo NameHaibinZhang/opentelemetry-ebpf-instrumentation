@@ -15,7 +15,7 @@ import (
 	"go.opentelemetry.io/obi/pkg/pipe/swarm/swarms"
 )
 
-// processMetricsCollector exposes the six Beyla-compatible process metrics
+// processMetricsCollector exposes process metrics
 // sampled from /proc by the procmetrics collector.
 type processMetricsCollector struct {
 	cpuTime        *prometheus.CounterVec
@@ -23,40 +23,43 @@ type processMetricsCollector struct {
 	memoryUsage    *prometheus.GaugeVec
 	memoryVirtual  *prometheus.GaugeVec
 	diskIO         *prometheus.CounterVec
-	networkIO      *prometheus.CounterVec
+	attrs          map[attributes.Name][]attributes.Field[*procmetrics.Snapshot, string]
 }
 
-func newProcessMetricsCollector(baseLabelNames []string) processMetricsCollector {
-	pidModeLabels := append(append([]string{}, baseLabelNames...), attr.ProcessPID.Prom(), attr.CPUMode.Prom())
-	pidDiskLabels := append(append([]string{}, baseLabelNames...), attr.ProcessPID.Prom(), attr.DiskIODirection.Prom())
-	pidNetworkLabels := append(append([]string{}, baseLabelNames...), attr.ProcessPID.Prom(), attr.NetworkIoDirection.Prom())
-	pidLabels := append(append([]string{}, baseLabelNames...), attr.ProcessPID.Prom())
+func newProcessMetricsCollector(selector *attributes.AttrSelector) processMetricsCollector {
+	attrs := map[attributes.Name][]attributes.Field[*procmetrics.Snapshot, string]{}
+	for _, name := range []attributes.Name{
+		attributes.ProcessCPUTime, attributes.ProcessCPUUtilization,
+		attributes.ProcessMemoryUsage, attributes.ProcessMemoryVirtual, attributes.ProcessDiskIO,
+	} {
+		attrs[name] = attributes.PrometheusGetters(procmetrics.PromGetters, selector.For(name))
+	}
+	labels := func(name attributes.Name, dimensions ...string) []string {
+		return append(append(labelNames(attrs[name]), attr.ProcessPID.Prom()), dimensions...)
+	}
 
 	return processMetricsCollector{
 		cpuTime: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: attributes.ProcessCPUTime.Prom,
 			Help: "CPU time of the process.",
-		}, pidModeLabels),
+		}, labels(attributes.ProcessCPUTime, attr.CPUMode.Prom())),
 		cpuUtilization: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: attributes.ProcessCPUUtilization.Prom,
 			Help: "CPU utilization of the process.",
-		}, pidModeLabels),
+		}, labels(attributes.ProcessCPUUtilization, attr.CPUMode.Prom())),
 		memoryUsage: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: attributes.ProcessMemoryUsage.Prom,
 			Help: "Memory usage of the process.",
-		}, pidLabels),
+		}, labels(attributes.ProcessMemoryUsage)),
 		memoryVirtual: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: attributes.ProcessMemoryVirtual.Prom,
 			Help: "Virtual memory size of the process.",
-		}, pidLabels),
+		}, labels(attributes.ProcessMemoryVirtual)),
 		diskIO: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: attributes.ProcessDiskIO.Prom,
 			Help: "Disk IO bytes of the process.",
-		}, pidDiskLabels),
-		networkIO: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: attributes.ProcessNetworkIO.Prom,
-			Help: "Network IO bytes of the process.",
-		}, pidNetworkLabels),
+		}, labels(attributes.ProcessDiskIO, attr.DiskIODirection.Prom())),
+		attrs: attrs,
 	}
 }
 
@@ -67,7 +70,6 @@ func (c *processMetricsCollector) collectors() []prometheus.Collector {
 		c.memoryUsage,
 		c.memoryVirtual,
 		c.diskIO,
-		c.networkIO,
 	}
 }
 
@@ -79,55 +81,42 @@ func (r *metricsReporter) watchForProcessMetrics(ctx context.Context) {
 func (r *metricsReporter) collectProcessMetrics(snapshots []procmetrics.Snapshot) {
 	for i := range snapshots {
 		snapshot := &snapshots[i]
-		if !snapshot.Service.ExportModes.CanExportMetrics() {
+		if !snapshot.Removed && (!snapshot.Service.ExportModes.CanExportMetrics() || !snapshot.Service.Features.Process()) {
 			continue
 		}
-		baseLabels := r.labelValuesTargetInfo(&snapshot.Service)
-		pid := strconv.Itoa(int(snapshot.PID))
-
 		if snapshot.Removed {
-			r.deleteProcessMetrics(baseLabels, pid)
+			r.deleteProcessMetrics(snapshot)
 			continue
 		}
 
-		userLabels := append(baseValues(baseLabels, pid), procmetrics.CPUModeUser)
-		systemLabels := append(baseValues(baseLabels, pid), procmetrics.CPUModeSystem)
-		r.processMetrics.cpuTime.WithLabelValues(userLabels...).Add(snapshot.CPUTimeUserSeconds)
-		r.processMetrics.cpuTime.WithLabelValues(systemLabels...).Add(snapshot.CPUTimeSystemSeconds)
-		r.processMetrics.cpuUtilization.WithLabelValues(userLabels...).Set(snapshot.CPUUtilizationUser)
-		r.processMetrics.cpuUtilization.WithLabelValues(systemLabels...).Set(snapshot.CPUUtilizationSystem)
+		c := &r.processMetrics
+		c.cpuTime.WithLabelValues(c.labels(snapshot, attributes.ProcessCPUTime, procmetrics.CPUModeUser)...).Add(snapshot.CPUTimeUserSeconds)
+		c.cpuTime.WithLabelValues(c.labels(snapshot, attributes.ProcessCPUTime, procmetrics.CPUModeSystem)...).Add(snapshot.CPUTimeSystemSeconds)
+		c.cpuUtilization.WithLabelValues(c.labels(snapshot, attributes.ProcessCPUUtilization, procmetrics.CPUModeUser)...).Set(snapshot.CPUUtilizationUser)
+		c.cpuUtilization.WithLabelValues(c.labels(snapshot, attributes.ProcessCPUUtilization, procmetrics.CPUModeSystem)...).Set(snapshot.CPUUtilizationSystem)
 
-		pidLabels := baseValues(baseLabels, pid)
-		r.processMetrics.memoryUsage.WithLabelValues(pidLabels...).Set(float64(snapshot.MemoryUsageBytes))
-		r.processMetrics.memoryVirtual.WithLabelValues(pidLabels...).Set(float64(snapshot.MemoryVirtualBytes))
+		c.memoryUsage.WithLabelValues(c.labels(snapshot, attributes.ProcessMemoryUsage)...).Set(float64(snapshot.MemoryUsageBytes))
+		c.memoryVirtual.WithLabelValues(c.labels(snapshot, attributes.ProcessMemoryVirtual)...).Set(float64(snapshot.MemoryVirtualBytes))
 
-		readLabels := append(baseValues(baseLabels, pid), procmetrics.DiskDirectionRead)
-		writeLabels := append(baseValues(baseLabels, pid), procmetrics.DiskDirectionWrite)
-		r.processMetrics.diskIO.WithLabelValues(readLabels...).Add(float64(snapshot.DiskReadBytes))
-		r.processMetrics.diskIO.WithLabelValues(writeLabels...).Add(float64(snapshot.DiskWriteBytes))
-
-		receiveLabels := append(baseValues(baseLabels, pid), procmetrics.NetworkDirectionReceive)
-		transmitLabels := append(baseValues(baseLabels, pid), procmetrics.NetworkDirectionTransmit)
-		r.processMetrics.networkIO.WithLabelValues(receiveLabels...).Add(float64(snapshot.NetworkReceiveBytes))
-		r.processMetrics.networkIO.WithLabelValues(transmitLabels...).Add(float64(snapshot.NetworkTransmitBytes))
+		c.diskIO.WithLabelValues(c.labels(snapshot, attributes.ProcessDiskIO, procmetrics.DiskDirectionRead)...).Add(float64(snapshot.DiskReadBytes))
+		c.diskIO.WithLabelValues(c.labels(snapshot, attributes.ProcessDiskIO, procmetrics.DiskDirectionWrite)...).Add(float64(snapshot.DiskWriteBytes))
 	}
 }
 
-func baseValues(baseLabels []string, pid string) []string {
-	values := make([]string, 0, len(baseLabels)+1)
-	values = append(values, baseLabels...)
-	return append(values, pid)
+func (c *processMetricsCollector) labels(snapshot *procmetrics.Snapshot, name attributes.Name, dimensions ...string) []string {
+	values := append(labelValues(snapshot, c.attrs[name]), strconv.Itoa(int(snapshot.PID)))
+	return append(values, dimensions...)
 }
 
-func (r *metricsReporter) deleteProcessMetrics(baseLabels []string, pid string) {
-	r.processMetrics.cpuTime.DeleteLabelValues(append(baseValues(baseLabels, pid), procmetrics.CPUModeUser)...)
-	r.processMetrics.cpuTime.DeleteLabelValues(append(baseValues(baseLabels, pid), procmetrics.CPUModeSystem)...)
-	r.processMetrics.cpuUtilization.DeleteLabelValues(append(baseValues(baseLabels, pid), procmetrics.CPUModeUser)...)
-	r.processMetrics.cpuUtilization.DeleteLabelValues(append(baseValues(baseLabels, pid), procmetrics.CPUModeSystem)...)
-	r.processMetrics.memoryUsage.DeleteLabelValues(baseValues(baseLabels, pid)...)
-	r.processMetrics.memoryVirtual.DeleteLabelValues(baseValues(baseLabels, pid)...)
-	r.processMetrics.diskIO.DeleteLabelValues(append(baseValues(baseLabels, pid), procmetrics.DiskDirectionRead)...)
-	r.processMetrics.diskIO.DeleteLabelValues(append(baseValues(baseLabels, pid), procmetrics.DiskDirectionWrite)...)
-	r.processMetrics.networkIO.DeleteLabelValues(append(baseValues(baseLabels, pid), procmetrics.NetworkDirectionReceive)...)
-	r.processMetrics.networkIO.DeleteLabelValues(append(baseValues(baseLabels, pid), procmetrics.NetworkDirectionTransmit)...)
+func (r *metricsReporter) deleteProcessMetrics(snapshot *procmetrics.Snapshot) {
+	c := &r.processMetrics
+	for _, mode := range []string{procmetrics.CPUModeUser, procmetrics.CPUModeSystem} {
+		c.cpuTime.DeleteLabelValues(c.labels(snapshot, attributes.ProcessCPUTime, mode)...)
+		c.cpuUtilization.DeleteLabelValues(c.labels(snapshot, attributes.ProcessCPUUtilization, mode)...)
+	}
+	c.memoryUsage.DeleteLabelValues(c.labels(snapshot, attributes.ProcessMemoryUsage)...)
+	c.memoryVirtual.DeleteLabelValues(c.labels(snapshot, attributes.ProcessMemoryVirtual)...)
+	for _, direction := range []string{procmetrics.DiskDirectionRead, procmetrics.DiskDirectionWrite} {
+		c.diskIO.DeleteLabelValues(c.labels(snapshot, attributes.ProcessDiskIO, direction)...)
+	}
 }

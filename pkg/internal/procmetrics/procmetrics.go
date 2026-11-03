@@ -2,16 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package procmetrics samples /proc for the processes discovered by OBI and
-// publishes process-level metrics (CPU, memory, disk and network I/O) to the
+// publishes process-level metrics (CPU, memory and disk I/O) to the
 // metrics pipeline.
 package procmetrics // import "go.opentelemetry.io/obi/pkg/internal/procmetrics"
 
 import (
+	"bufio"
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/prometheus/procfs"
@@ -38,14 +41,10 @@ const (
 	// DiskDirectionRead and DiskDirectionWrite identify the disk.io.direction attribute values.
 	DiskDirectionRead  = "read"
 	DiskDirectionWrite = "write"
-
-	// NetworkDirectionReceive and NetworkDirectionTransmit identify the network.io.direction attribute values.
-	NetworkDirectionReceive  = "receive"
-	NetworkDirectionTransmit = "transmit"
 )
 
 // Snapshot carries one sampling interval of process metrics. Cumulative
-// values (CPU time, disk and network I/O) are reported as deltas since the
+// values (CPU time and disk I/O) are reported as deltas since the
 // previous sample of the same PID; gauges (utilization, memory) are absolute.
 // A Snapshot with Removed set is a tombstone: it carries no values and tells
 // exporters to drop the series of the given PID.
@@ -68,8 +67,6 @@ type Snapshot struct {
 	MemoryVirtualBytes   int64
 	DiskReadBytes        uint64
 	DiskWriteBytes       uint64
-	NetworkReceiveBytes  uint64
-	NetworkTransmitBytes uint64
 }
 
 type trackedProcess struct {
@@ -81,14 +78,13 @@ type trackedProcess struct {
 	parentPID      app.PID
 	owner          string
 
-	lastSample    time.Time
-	cpuUserTicks  uint64
-	cpuSystemTick uint64
-	diskRead      uint64
-	diskWrite     uint64
-	netReceive    uint64
-	netTransmit   uint64
-	initialized   bool
+	lastSample      time.Time
+	cpuUserTicks    uint64
+	cpuSystemTick   uint64
+	diskRead        uint64
+	diskWrite       uint64
+	diskInitialized bool
+	initialized     bool
 }
 
 type processCollector struct {
@@ -97,8 +93,9 @@ type processCollector struct {
 	interval time.Duration
 	clock    func() time.Time
 	numCPU   float64
+	fs       procfs.FS
+	procRoot string
 
-	mu      sync.Mutex
 	tracked map[app.PID]*trackedProcess
 }
 
@@ -117,6 +114,10 @@ func ProcessCollector(
 		if interval <= 0 {
 			interval = DefaultSamplingInterval
 		}
+		fs, err := procfs.NewFS(procfs.DefaultMountPoint)
+		if err != nil {
+			return nil, err
+		}
 		numCPU := float64(runtime.NumCPU())
 		if numCPU <= 0 {
 			numCPU = 1
@@ -127,6 +128,8 @@ func ProcessCollector(
 			interval: interval,
 			clock:    time.Now,
 			numCPU:   numCPU,
+			fs:       fs,
+			procRoot: procfs.DefaultMountPoint,
 			tracked:  map[app.PID]*trackedProcess{},
 		}
 		return c.run, nil
@@ -134,6 +137,7 @@ func ProcessCollector(
 }
 
 func (c *processCollector) run(ctx context.Context) {
+	defer c.output.Close()
 	log := slog.With("component", "procmetrics.ProcessCollector", "interval", c.interval)
 	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
@@ -160,13 +164,16 @@ func (c *processCollector) onProcessEvent(ev *exec.ProcessEvent) {
 	}
 	pid := ev.File.Pid()
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	switch ev.Type {
 	case exec.ProcessEventCreated:
-		if _, ok := c.tracked[pid]; ok {
+		if !ev.ServiceFile().ServiceAttrs().Features.Process() {
 			return
+		}
+		if previous, ok := c.tracked[pid]; ok {
+			if previous.startTime == ev.File.StartTime() {
+				return
+			}
+			c.output.Send([]Snapshot{previous.snapshot(pid, c.clock(), true)})
 		}
 		c.tracked[pid] = &trackedProcess{
 			service:        ev.ServiceFile().ServiceAttrs(),
@@ -177,23 +184,15 @@ func (c *processCollector) onProcessEvent(ev *exec.ProcessEvent) {
 		}
 	case exec.ProcessEventTerminated:
 		tp, ok := c.tracked[pid]
-		if !ok {
+		if !ok || tp.startTime != ev.File.StartTime() {
 			return
 		}
 		delete(c.tracked, pid)
-		c.output.Send([]Snapshot{{
-			Service: tp.service,
-			PID:     pid,
-			Time:    c.clock(),
-			Removed: true,
-		}})
+		c.output.Send([]Snapshot{tp.snapshot(pid, c.clock(), true)})
 	}
 }
 
 func (c *processCollector) harvestAll(now time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if len(c.tracked) == 0 {
 		return
 	}
@@ -211,42 +210,37 @@ func (c *processCollector) harvestAll(now time.Time) {
 // harvest samples a single process. When the PID has been reused or the
 // process vanished, it untracks the process and emits a tombstone.
 func (c *processCollector) harvest(pid app.PID, tp *trackedProcess, now time.Time) Snapshot {
-	proc, err := procfs.NewProc(int(pid))
+	proc, err := c.fs.Proc(int(pid))
 	if err != nil {
 		delete(c.tracked, pid)
-		return Snapshot{Service: tp.service, PID: pid, Time: now, Removed: true}
+		return tp.snapshot(pid, now, true)
 	}
 
 	stat, err := proc.Stat()
 	if err != nil || stat.Starttime != tp.startTime {
 		// The process terminated without an event, or its PID was reused.
 		delete(c.tracked, pid)
-		return Snapshot{Service: tp.service, PID: pid, Time: now, Removed: true}
+		return tp.snapshot(pid, now, true)
 	}
 
-	snap := Snapshot{
-		Service:        tp.service,
-		PID:            pid,
-		Time:           now,
-		Command:        tp.command,
-		ExecutablePath: tp.executablePath,
-		ParentPID:      tp.parentPID,
-		Owner:          tp.owner,
-	}
+	snap := tp.snapshot(pid, now, false)
+	snap.MemoryUsageBytes = int64(stat.ResidentMemory())
+	snap.MemoryVirtualBytes = int64(stat.VirtualMemory())
 
 	wallSeconds := now.Sub(tp.lastSample).Seconds()
+	numCPU := c.numCPU
+	status, statusErr := proc.NewStatus()
+	if statusErr == nil && len(status.CpusAllowedList) > 0 {
+		numCPU = float64(len(status.CpusAllowedList))
+	}
 
 	if !tp.initialized {
-		tp.initialized = true
-		tp.lastSample = now
 		tp.cpuUserTicks = uint64(stat.UTime)
 		tp.cpuSystemTick = uint64(stat.STime)
-		if status, err := proc.NewStatus(); err == nil {
-			snap.Owner = trackedOwner(status.UIDs)
+		if statusErr == nil {
+			snap.Owner = processOwner(c.procRoot, pid, status.UIDs[0])
 			tp.owner = snap.Owner
 		}
-		// IO and network baselines: leave the deltas at zero for this sample.
-		return snap
 	}
 
 	cpuUser := uint64(stat.UTime)
@@ -254,34 +248,32 @@ func (c *processCollector) harvest(pid app.PID, tp *trackedProcess, now time.Tim
 	snap.CPUTimeUserSeconds = float64(delta(tp.cpuUserTicks, cpuUser)) / userHZ
 	snap.CPUTimeSystemSeconds = float64(delta(tp.cpuSystemTick, cpuSystem)) / userHZ
 	if wallSeconds > 0 {
-		snap.CPUUtilizationUser = snap.CPUTimeUserSeconds / wallSeconds / c.numCPU
-		snap.CPUUtilizationSystem = snap.CPUTimeSystemSeconds / wallSeconds / c.numCPU
+		snap.CPUUtilizationUser = snap.CPUTimeUserSeconds / wallSeconds / numCPU
+		snap.CPUUtilizationSystem = snap.CPUTimeSystemSeconds / wallSeconds / numCPU
 	}
 	tp.cpuUserTicks = cpuUser
 	tp.cpuSystemTick = cpuSystem
 
-	if status, err := proc.NewStatus(); err == nil {
-		snap.MemoryUsageBytes = int64(status.VmRSS)
-		snap.MemoryVirtualBytes = int64(status.VmSize)
-	}
-
 	if io, err := proc.IO(); err == nil {
-		snap.DiskReadBytes = delta(tp.diskRead, io.ReadBytes)
-		snap.DiskWriteBytes = delta(tp.diskWrite, io.WriteBytes)
+		if tp.diskInitialized {
+			snap.DiskReadBytes = delta(tp.diskRead, io.ReadBytes)
+			snap.DiskWriteBytes = delta(tp.diskWrite, io.WriteBytes)
+		}
 		tp.diskRead = io.ReadBytes
 		tp.diskWrite = io.WriteBytes
+		tp.diskInitialized = true
 	}
-
-	if netDev, err := proc.NetDev(); err == nil {
-		total := netDev.Total()
-		snap.NetworkReceiveBytes = delta(tp.netReceive, total.RxBytes)
-		snap.NetworkTransmitBytes = delta(tp.netTransmit, total.TxBytes)
-		tp.netReceive = total.RxBytes
-		tp.netTransmit = total.TxBytes
-	}
-
+	tp.initialized = true
 	tp.lastSample = now
 	return snap
+}
+
+func (tp *trackedProcess) snapshot(pid app.PID, now time.Time, removed bool) Snapshot {
+	return Snapshot{
+		Service: tp.service, PID: pid, Time: now, Removed: removed,
+		Command: tp.command, ExecutablePath: tp.executablePath,
+		ParentPID: tp.parentPID, Owner: tp.owner,
+	}
 }
 
 func delta(previous, current uint64) uint64 {
@@ -291,9 +283,22 @@ func delta(previous, current uint64) uint64 {
 	return current - previous
 }
 
-func trackedOwner(uids [4]uint64) string {
-	if uids[0] == 0 && uids[1] == 0 && uids[2] == 0 && uids[3] == 0 {
+func processOwner(procRoot string, pid app.PID, uid uint64) string {
+	// Resolve names in the target's filesystem; the agent may have a different
+	// user database from a process running in a container.
+	file, err := os.Open(filepath.Join(procRoot, strconv.Itoa(int(pid)), "root", "etc", "passwd"))
+	if err != nil {
 		return ""
 	}
-	return strconv.FormatUint(uids[0], 10)
+	defer file.Close()
+
+	id := strconv.FormatUint(uid, 10)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Split(scanner.Text(), ":")
+		if len(fields) >= 3 && fields[2] == id {
+			return fields[0]
+		}
+	}
+	return ""
 }

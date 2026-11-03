@@ -33,7 +33,7 @@ func pmlog() *slog.Logger {
 }
 
 // ProcessMetricsReporter reports the process-level metrics that the
-// procmetrics collector samples from /proc, following the Beyla/OpenTelemetry
+// procmetrics collector samples from /proc, following the OpenTelemetry
 // process semantic conventions.
 type ProcessMetricsReporter struct {
 	ctx       context.Context
@@ -44,6 +44,7 @@ type ProcessMetricsReporter struct {
 	input     <-chan []procmetrics.Snapshot
 	log       *slog.Logger
 	selector  attributes.Selection
+	attrs     map[attributes.Name][]attributes.Field[*procmetrics.Snapshot, attribute.KeyValue]
 }
 
 // ProcessMetrics holds the OTEL instruments for the process metrics of a
@@ -58,15 +59,14 @@ type ProcessMetrics struct {
 	memoryUsage    instrument.Int64UpDownCounter
 	memoryVirtual  instrument.Int64UpDownCounter
 	diskIO         instrument.Int64Counter
-	networkIO      instrument.Int64Counter
+	attrs          map[attributes.Name][]attributes.Field[*procmetrics.Snapshot, attribute.KeyValue]
 
 	mu     sync.Mutex
 	values map[app.PID]*processMetricValues
 }
 
 // processMetricValues tracks the last recorded memory contributions per PID so
-// that the cumulative memory UpDownCounters can be compensated when a process
-// disappears.
+// that absolute samples can be converted to UpDownCounter deltas.
 type processMetricValues struct {
 	lastMemoryUsage   int64
 	lastMemoryVirtual int64
@@ -104,6 +104,10 @@ func newProcessMetricsReporter(
 	selectorCfg *attributes.SelectorConfig,
 	input *msg.Queue[[]procmetrics.Snapshot],
 ) (*ProcessMetricsReporter, error) {
+	selector, err := attributes.NewAttrSelector(ctxInfo.MetricAttributeGroups, selectorCfg)
+	if err != nil {
+		return nil, err
+	}
 	exporter, err := ctxInfo.OTELMetricsExporter.Instantiate(ctx)
 	if err != nil {
 		return nil, err
@@ -117,6 +121,13 @@ func newProcessMetricsReporter(
 		input:    input.Subscribe(msg.SubscriberName("otel.ProcessMetricsReporter")),
 		log:      pmlog(),
 		selector: selectorCfg.SelectionCfg,
+		attrs:    map[attributes.Name][]attributes.Field[*procmetrics.Snapshot, attribute.KeyValue]{},
+	}
+	for _, name := range []attributes.Name{
+		attributes.ProcessCPUTime, attributes.ProcessCPUUtilization,
+		attributes.ProcessMemoryUsage, attributes.ProcessMemoryVirtual, attributes.ProcessDiskIO,
+	} {
+		reporter.attrs[name] = attributes.OpenTelemetryGetters(procmetrics.OTELGetters, selector.For(name))
 	}
 
 	reporter.reporters, err = otelcfg.NewReporterPool[*svc.Attrs, *ProcessMetrics](cfg.ReportersCacheLen, cfg.TTL, timeNow,
@@ -154,49 +165,48 @@ func (r *ProcessMetricsReporter) newMetricSet(service *svc.Attrs) (*ProcessMetri
 		service:  service,
 		provider: provider,
 		values:   map[app.PID]*processMetricValues{},
+		attrs:    r.attrs,
 	}
 
-	meter := provider.Meter(reporterName, obiMeterOptions()...)
+	if err := setupProcessMeters(metrics, provider.Meter(reporterName, obiMeterOptions()...)); err != nil {
+		return nil, err
+	}
+	return metrics, nil
+}
 
+func setupProcessMeters(metrics *ProcessMetrics, meter instrument.Meter) error {
 	var err error
 	if metrics.cpuTime, err = meter.Float64Counter(string(attributes.ProcessCPUTime.OTEL),
 		instrument.WithUnit(attributes.ProcessCPUTime.Unit),
 		instrument.WithDescription("CPU time of the process"),
 	); err != nil {
-		return nil, err
+		return err
 	}
 	if metrics.cpuUtilization, err = meter.Float64Gauge(string(attributes.ProcessCPUUtilization.OTEL),
 		instrument.WithUnit(attributes.ProcessCPUUtilization.Unit),
 		instrument.WithDescription("CPU utilization of the process"),
 	); err != nil {
-		return nil, err
+		return err
 	}
 	if metrics.memoryUsage, err = meter.Int64UpDownCounter(string(attributes.ProcessMemoryUsage.OTEL),
 		instrument.WithUnit(attributes.ProcessMemoryUsage.Unit),
 		instrument.WithDescription("Memory usage of the process"),
 	); err != nil {
-		return nil, err
+		return err
 	}
 	if metrics.memoryVirtual, err = meter.Int64UpDownCounter(string(attributes.ProcessMemoryVirtual.OTEL),
 		instrument.WithUnit(attributes.ProcessMemoryVirtual.Unit),
 		instrument.WithDescription("Virtual memory size of the process"),
 	); err != nil {
-		return nil, err
+		return err
 	}
 	if metrics.diskIO, err = meter.Int64Counter(string(attributes.ProcessDiskIO.OTEL),
 		instrument.WithUnit(attributes.ProcessDiskIO.Unit),
 		instrument.WithDescription("Disk IO bytes of the process"),
 	); err != nil {
-		return nil, err
+		return err
 	}
-	if metrics.networkIO, err = meter.Int64Counter(string(attributes.ProcessNetworkIO.OTEL),
-		instrument.WithUnit(attributes.ProcessNetworkIO.Unit),
-		instrument.WithDescription("Network IO bytes of the process"),
-	); err != nil {
-		return nil, err
-	}
-
-	return metrics, nil
+	return nil
 }
 
 func (r *ProcessMetricsReporter) reportMetrics(ctx context.Context) {
@@ -220,15 +230,28 @@ func (r *ProcessMetricsReporter) reportMetrics(ctx context.Context) {
 func (r *ProcessMetricsReporter) reportProcessMetrics(snapshots []procmetrics.Snapshot) {
 	for i := range snapshots {
 		snapshot := &snapshots[i]
-		if !snapshot.Service.ExportModes.CanExportMetrics() {
+		if !snapshot.Removed && (!snapshot.Service.ExportModes.CanExportMetrics() || !snapshot.Service.Features.Process()) {
 			continue
 		}
-		metrics, err := r.reporters.For(&snapshot.Service)
-		if err != nil {
-			r.log.Debug("creating process metric set failed", "pid", snapshot.PID, "error", err)
-			continue
+		var metrics *ProcessMetrics
+		if snapshot.Removed {
+			var ok bool
+			metrics, ok = r.reporters.Lookup(snapshot.Service.UID)
+			if !ok {
+				continue
+			}
+		} else {
+			var err error
+			metrics, err = r.reporters.For(&snapshot.Service)
+			if err != nil {
+				r.log.Debug("creating process metric set failed", "pid", snapshot.PID, "error", err)
+				continue
+			}
 		}
 		recordProcessMetrics(r.ctx, metrics, snapshot)
+		if snapshot.Removed && len(metrics.values) == 0 {
+			r.reporters.Remove(snapshot.Service.UID)
+		}
 	}
 }
 
@@ -240,56 +263,61 @@ func recordProcessMetrics(ctx context.Context, metrics *ProcessMetrics, snapshot
 	metrics.mu.Lock()
 	defer metrics.mu.Unlock()
 
-	pidAttr := attribute.Int64(string(attr.ProcessPID), int64(snapshot.PID))
+	cpuUser := metrics.attributes(snapshot, attributes.ProcessCPUTime, attribute.String(string(attr.CPUMode), procmetrics.CPUModeUser))
+	cpuSystem := metrics.attributes(snapshot, attributes.ProcessCPUTime, attribute.String(string(attr.CPUMode), procmetrics.CPUModeSystem))
+	utilUser := metrics.attributes(snapshot, attributes.ProcessCPUUtilization, attribute.String(string(attr.CPUMode), procmetrics.CPUModeUser))
+	utilSystem := metrics.attributes(snapshot, attributes.ProcessCPUUtilization, attribute.String(string(attr.CPUMode), procmetrics.CPUModeSystem))
+	memory := metrics.attributes(snapshot, attributes.ProcessMemoryUsage)
+	virtual := metrics.attributes(snapshot, attributes.ProcessMemoryVirtual)
+	read := metrics.attributes(snapshot, attributes.ProcessDiskIO, attribute.String(string(attr.DiskIODirection), procmetrics.DiskDirectionRead))
+	write := metrics.attributes(snapshot, attributes.ProcessDiskIO, attribute.String(string(attr.DiskIODirection), procmetrics.DiskDirectionWrite))
 
 	if snapshot.Removed {
-		// Compensate the cumulative memory UpDownCounters and zero the gauge so
-		// the series does not keep stale values for a dead process.
-		if values, ok := metrics.values[snapshot.PID]; ok {
-			if values.lastMemoryUsage != 0 {
-				metrics.memoryUsage.Add(ctx, -values.lastMemoryUsage, instrument.WithAttributes(pidAttr))
-			}
-			if values.lastMemoryVirtual != 0 {
-				metrics.memoryVirtual.Add(ctx, -values.lastMemoryVirtual, instrument.WithAttributes(pidAttr))
-			}
-			delete(metrics.values, snapshot.PID)
-		}
-		metrics.cpuUtilization.Record(ctx, 0, instrument.WithAttributes(pidAttr))
+		metrics.cpuTime.Remove(ctx, instrument.WithAttributeSet(cpuUser))
+		metrics.cpuTime.Remove(ctx, instrument.WithAttributeSet(cpuSystem))
+		metrics.cpuUtilization.Remove(ctx, instrument.WithAttributeSet(utilUser))
+		metrics.cpuUtilization.Remove(ctx, instrument.WithAttributeSet(utilSystem))
+		metrics.memoryUsage.Remove(ctx, instrument.WithAttributeSet(memory))
+		metrics.memoryVirtual.Remove(ctx, instrument.WithAttributeSet(virtual))
+		metrics.diskIO.Remove(ctx, instrument.WithAttributeSet(read))
+		metrics.diskIO.Remove(ctx, instrument.WithAttributeSet(write))
+		delete(metrics.values, snapshot.PID)
 		return
 	}
-
-	userAttr := instrument.WithAttributes(pidAttr, attribute.String(string(attr.CPUMode), procmetrics.CPUModeUser))
-	systemAttr := instrument.WithAttributes(pidAttr, attribute.String(string(attr.CPUMode), procmetrics.CPUModeSystem))
-
-	metrics.cpuTime.Add(ctx, snapshot.CPUTimeUserSeconds, userAttr)
-	metrics.cpuTime.Add(ctx, snapshot.CPUTimeSystemSeconds, systemAttr)
-
-	metrics.cpuUtilization.Record(ctx, snapshot.CPUUtilizationUser, userAttr)
-	metrics.cpuUtilization.Record(ctx, snapshot.CPUUtilizationSystem, systemAttr)
-
-	metrics.memoryUsage.Add(ctx, snapshot.MemoryUsageBytes, instrument.WithAttributes(pidAttr))
-	metrics.memoryVirtual.Add(ctx, snapshot.MemoryVirtualBytes, instrument.WithAttributes(pidAttr))
-
-	readAttr := instrument.WithAttributes(pidAttr, attribute.String(string(attr.DiskIODirection), procmetrics.DiskDirectionRead))
-	writeAttr := instrument.WithAttributes(pidAttr, attribute.String(string(attr.DiskIODirection), procmetrics.DiskDirectionWrite))
-	metrics.diskIO.Add(ctx, int64(snapshot.DiskReadBytes), readAttr)
-	metrics.diskIO.Add(ctx, int64(snapshot.DiskWriteBytes), writeAttr)
-
-	receiveAttr := instrument.WithAttributes(pidAttr, attribute.String(string(attr.NetworkIoDirection), procmetrics.NetworkDirectionReceive))
-	transmitAttr := instrument.WithAttributes(pidAttr, attribute.String(string(attr.NetworkIoDirection), procmetrics.NetworkDirectionTransmit))
-	metrics.networkIO.Add(ctx, int64(snapshot.NetworkReceiveBytes), receiveAttr)
-	metrics.networkIO.Add(ctx, int64(snapshot.NetworkTransmitBytes), transmitAttr)
 
 	values := metrics.values[snapshot.PID]
 	if values == nil {
 		values = &processMetricValues{}
 		metrics.values[snapshot.PID] = values
 	}
+	metrics.cpuTime.Add(ctx, snapshot.CPUTimeUserSeconds, instrument.WithAttributeSet(cpuUser))
+	metrics.cpuTime.Add(ctx, snapshot.CPUTimeSystemSeconds, instrument.WithAttributeSet(cpuSystem))
+	metrics.cpuUtilization.Record(ctx, snapshot.CPUUtilizationUser, instrument.WithAttributeSet(utilUser))
+	metrics.cpuUtilization.Record(ctx, snapshot.CPUUtilizationSystem, instrument.WithAttributeSet(utilSystem))
+	metrics.memoryUsage.Add(ctx, snapshot.MemoryUsageBytes-values.lastMemoryUsage, instrument.WithAttributeSet(memory))
+	metrics.memoryVirtual.Add(ctx, snapshot.MemoryVirtualBytes-values.lastMemoryVirtual, instrument.WithAttributeSet(virtual))
+	metrics.diskIO.Add(ctx, int64(snapshot.DiskReadBytes), instrument.WithAttributeSet(read))
+	metrics.diskIO.Add(ctx, int64(snapshot.DiskWriteBytes), instrument.WithAttributeSet(write))
 	values.lastMemoryUsage = snapshot.MemoryUsageBytes
 	values.lastMemoryVirtual = snapshot.MemoryVirtualBytes
 }
 
+func (m *ProcessMetrics) attributes(snapshot *procmetrics.Snapshot, name attributes.Name, dimensions ...attribute.KeyValue) attribute.Set {
+	values := []attribute.KeyValue{attribute.Int64(string(attr.ProcessPID), int64(snapshot.PID))}
+	for _, field := range m.attrs[name] {
+		if value := field.Get(snapshot); value.Valid() {
+			values = append(values, value)
+		}
+	}
+	return attribute.NewSet(append(values, dimensions...)...)
+}
+
 func (r *ProcessMetricsReporter) close() {
+	r.reporters.ForEach(func(_ svc.UID, metrics *ProcessMetrics) {
+		if err := metrics.provider.Shutdown(context.WithoutCancel(r.ctx)); err != nil {
+			r.log.Warn("closing process metrics provider", "error", err)
+		}
+	})
 	go func() {
 		if err := r.exporter.Shutdown(r.ctx); err != nil {
 			r.log.Warn("closing process metrics exporter", "error", err)

@@ -264,7 +264,7 @@ func getDefinitions(
 
 	processAttributes := NewAttrReportGroup(
 		false,
-		[]*AttrReportGroup{&appAttributes, &appContainerAttributes},
+		[]*AttrReportGroup{&appAttributes},
 		map[attr.Name]Default{
 			attr.ProcessPID:            true,
 			attr.ProcessCommand:        true,
@@ -779,12 +779,6 @@ func getDefinitions(
 			SubGroups: []*AttrReportGroup{&processAttributes},
 			Attributes: map[attr.Name]Default{
 				attr.DiskIODirection: true,
-			},
-		},
-		ProcessNetworkIO.Section: {
-			SubGroups: []*AttrReportGroup{&processAttributes},
-			Attributes: map[attr.Name]Default{
-				attr.NetworkIoDirection: true,
 			},
 		},
 		GoRuntimeGoroutineCount.Section: {

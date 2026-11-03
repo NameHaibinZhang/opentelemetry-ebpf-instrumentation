@@ -71,6 +71,15 @@ func TestServiceTopology(t *testing.T) {
 	assert.True(t, FeatureConnectionInfo.ServiceTopology())
 }
 
+func TestProcessMetricsRequireExplicitOptIn(t *testing.T) {
+	assert.False(t, FeatureAll.Process())
+	assert.False(t, mustLoadFeatures(t, "all").Process())
+	assert.False(t, mustLoadFeatures(t, "*").Process())
+	features, err := LoadV2Features([]string{"all", "process"})
+	require.NoError(t, err)
+	assert.True(t, features.Process())
+}
+
 func TestFeatureEnv(t *testing.T) {
 	doc := struct {
 		Features Features `env:"FOO"`

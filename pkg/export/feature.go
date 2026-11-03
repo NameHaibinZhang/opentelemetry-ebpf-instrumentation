@@ -70,8 +70,8 @@ const (
 	FeatureEBPF
 	FeatureConnectionInfo
 	FeatureProcess
-	// FeatureAll preserves the legacy all-features behavior while keeping connection info opt-in.
-	FeatureAll = Features(^uint(0)) &^ FeatureConnectionInfo
+	// Connection info and process metrics require explicit opt-in.
+	FeatureAll = Features(^uint(0)) &^ (FeatureConnectionInfo | FeatureProcess)
 )
 
 // FeatureStats enables all stat metrics, including TCP IO.

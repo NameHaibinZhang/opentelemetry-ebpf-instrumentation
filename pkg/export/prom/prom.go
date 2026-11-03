@@ -987,13 +987,7 @@ func newReporter(
 	}
 
 	if jointMetricsConfig.Features.Process() {
-		mr.processMetrics = newProcessMetricsCollector(labelNamesTargetInfo(
-			kubeEnabled,
-			dockerEnabled,
-			&ctxInfo.NodeMeta,
-			extraMetadataLabels,
-			selectorCfg.SelectionCfg,
-		))
+		mr.processMetrics = newProcessMetricsCollector(attrsProvider)
 	}
 
 	// testing aid

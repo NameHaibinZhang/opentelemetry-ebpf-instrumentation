@@ -326,12 +326,6 @@ var (
 		Unit:    "By",
 		Type:    InstrumentCounter,
 	})
-	ProcessNetworkIO = metric(Name{
-		Section: "process.network.io",
-		OTEL:    "process.network.io",
-		Unit:    "By",
-		Type:    InstrumentCounter,
-	})
 	GoRuntimeMemoryLimit = metric(Name{
 		Section: "go.memory.limit",
 		OTEL:    "go.memory.limit",
