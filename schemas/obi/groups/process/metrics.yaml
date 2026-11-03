@@ -1,0 +1,75 @@
+file_format: definition/2
+attribute_groups:
+  - id: attributes.obi.process
+    visibility: internal
+    attributes:
+      - ref: process.pid
+        requirement_level: required
+      - ref: process.command
+        requirement_level: recommended
+      - ref: process.executable.path
+        requirement_level: opt_in
+      - ref: process.parent_pid
+        requirement_level: opt_in
+      - ref: process.owner
+        requirement_level: opt_in
+
+metrics:
+  - name: process.cpu.time
+    annotations: &process_identity
+      obi:
+        upstream_extras:
+          process.pid: identifies the externally observed process within the service resource
+          process.command: identifies the command of the externally observed process
+          process.executable.path: optional executable identity of the externally observed process
+          process.parent_pid: optional parent identity of the externally observed process
+          process.owner: optional owner identity of the externally observed process
+    brief: OBI-emitted process.cpu.time
+    instrument: counter
+    unit: "s"
+    stability: development
+    requirement_level: recommended
+    attributes:
+      - ref_group: attributes.obi.process
+      - ref: cpu.mode
+        requirement_level: required
+  - name: process.cpu.utilization
+    annotations: *process_identity
+    brief: OBI-emitted process.cpu.utilization
+    instrument: gauge
+    unit: "1"
+    stability: development
+    requirement_level: opt_in
+    attributes:
+      - ref_group: attributes.obi.process
+      - ref: cpu.mode
+        requirement_level: required
+  - name: process.memory.usage
+    annotations: *process_identity
+    brief: OBI-emitted process.memory.usage
+    instrument: updowncounter
+    unit: "By"
+    stability: development
+    requirement_level: recommended
+    attributes:
+      - ref_group: attributes.obi.process
+  - name: process.memory.virtual
+    annotations: *process_identity
+    brief: OBI-emitted process.memory.virtual
+    instrument: updowncounter
+    unit: "By"
+    stability: development
+    requirement_level: recommended
+    attributes:
+      - ref_group: attributes.obi.process
+  - name: process.disk.io
+    annotations: *process_identity
+    brief: OBI-emitted process.disk.io
+    instrument: counter
+    unit: "By"
+    stability: development
+    requirement_level: recommended
+    attributes:
+      - ref_group: attributes.obi.process
+      - ref: disk.io.direction
+        requirement_level: required

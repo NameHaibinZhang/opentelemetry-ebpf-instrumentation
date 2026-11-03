@@ -30,6 +30,7 @@ import (
 	"go.opentelemetry.io/obi/pkg/export/otel"
 	"go.opentelemetry.io/obi/pkg/export/otel/otelcfg"
 	"go.opentelemetry.io/obi/pkg/export/otel/perapp"
+	"go.opentelemetry.io/obi/pkg/internal/procmetrics"
 	"go.opentelemetry.io/obi/pkg/metadata"
 	"go.opentelemetry.io/obi/pkg/pipe/global"
 	"go.opentelemetry.io/obi/pkg/pipe/msg"
@@ -164,6 +165,7 @@ type metricsReporter struct {
 	input         <-chan []request.Span
 	processEvents <-chan exec.ProcessEvent
 	runtimeInput  <-chan []runtimemetrics.RuntimeMetricSnapshot
+	processInput  <-chan []procmetrics.Snapshot
 
 	obiInfo                *Expirer[prometheus.Gauge]
 	httpDuration           *Expirer[prometheus.Histogram]
@@ -270,6 +272,7 @@ type metricsReporter struct {
 	nodejsRuntimeMetrics nodejsRuntimeMetricsCollector
 	pythonRuntimeMetrics pythonRuntimeMetricsCollector
 	dotnetRuntimeMetrics dotnetRuntimeMetricsCollector
+	processMetrics       processMetricsCollector
 
 	promConnect *connector.PrometheusManager
 
@@ -303,6 +306,7 @@ func PrometheusEndpoint(
 	input *msg.Queue[[]request.Span],
 	processEventCh *msg.Queue[exec.ProcessEvent],
 	runtimeMetricCh *msg.Queue[[]runtimemetrics.RuntimeMetricSnapshot],
+	processMetricCh *msg.Queue[[]procmetrics.Snapshot],
 ) swarm.InstanceFunc {
 	return func(ctx context.Context) (swarm.RunFunc, error) {
 		if !cfg.EndpointEnabled() || !jointMetricsConfig.Features.AnyAppO11yMetric() {
@@ -318,6 +322,7 @@ func PrometheusEndpoint(
 			input,
 			processEventCh,
 			runtimeMetricCh,
+			processMetricCh,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("instantiating Prometheus endpoint: %w", err)
@@ -351,6 +356,7 @@ func newReporter(
 	input *msg.Queue[[]request.Span],
 	processEventCh *msg.Queue[exec.ProcessEvent],
 	runtimeMetricCh *msg.Queue[[]runtimemetrics.RuntimeMetricSnapshot],
+	processMetricCh *msg.Queue[[]procmetrics.Snapshot],
 ) (*metricsReporter, error) {
 	groups := ctxInfo.MetricAttributeGroups
 	groups.Add(attributes.GroupPrometheus)
@@ -520,11 +526,16 @@ func newReporter(
 	if runtimeMetricCh != nil {
 		runtimeInputCh = runtimeMetricCh.Subscribe(msg.SubscriberName("prom.RuntimeMetrics"))
 	}
+	var processInputCh <-chan []procmetrics.Snapshot
+	if processMetricCh != nil {
+		processInputCh = processMetricCh.Subscribe(msg.SubscriberName("prom.ProcessMetrics"))
+	}
 
 	mr := &metricsReporter{
 		input:                          inputCh,
 		processEvents:                  processEventCh.Subscribe(msg.SubscriberName("prom.ProcessEvents")),
 		runtimeInput:                   runtimeInputCh,
+		processInput:                   processInputCh,
 		serviceMap:                     map[svc.UID]svc.Attrs{},
 		pidsTracker:                    otel.NewPidServiceTracker(),
 		ctxInfo:                        ctxInfo,
@@ -975,6 +986,10 @@ func newReporter(
 		mr.dotnetRuntimeMetrics = newDotnetRuntimeMetricsCollector(runtimeLabelNames, timeNow, cfg.TTL)
 	}
 
+	if jointMetricsConfig.Features.Process() {
+		mr.processMetrics = newProcessMetricsCollector(attrsProvider)
+	}
+
 	// testing aid
 	mr.deleteEventMetrics = mr.deleteMetricsForService
 	mr.deleteEventMetricsPreservingHistograms = mr.deleteMetricsForServicePreservingRuntimeHistograms
@@ -1097,6 +1112,10 @@ func newReporter(
 		)
 	}
 
+	if jointMetricsConfig.Features.Process() {
+		registeredMetrics = append(registeredMetrics, mr.processMetrics.collectors()...)
+	}
+
 	if is.GPUEnabled() {
 		registeredMetrics = append(registeredMetrics,
 			mr.cudaKernelCallsTotal,
@@ -1177,6 +1196,9 @@ func (r *metricsReporter) collectMetrics(ctx context.Context) {
 	go r.watchForProcessEvents(ctx)
 	if r.runtimeInput != nil {
 		go r.watchForRuntimeMetrics(ctx)
+	}
+	if r.processInput != nil {
+		go r.watchForProcessMetrics(ctx)
 	}
 	swarms.ForEachInput(ctx, r.input, nil, func(spans []request.Span) {
 		for i := range spans {

@@ -296,6 +296,36 @@ var (
 		Unit:    "s",
 		Type:    InstrumentHistogram,
 	})
+	ProcessCPUTime = metric(Name{
+		Section: "process.cpu.time",
+		OTEL:    "process.cpu.time",
+		Unit:    "s",
+		Type:    InstrumentCounter,
+	})
+	ProcessCPUUtilization = metric(Name{
+		Section: "process.cpu.utilization",
+		OTEL:    "process.cpu.utilization",
+		Unit:    "1",
+		Type:    InstrumentGauge,
+	})
+	ProcessMemoryUsage = metric(Name{
+		Section: "process.memory.usage",
+		OTEL:    "process.memory.usage",
+		Unit:    "By",
+		Type:    InstrumentUpDownCounter,
+	})
+	ProcessMemoryVirtual = metric(Name{
+		Section: "process.memory.virtual",
+		OTEL:    "process.memory.virtual",
+		Unit:    "By",
+		Type:    InstrumentUpDownCounter,
+	})
+	ProcessDiskIO = metric(Name{
+		Section: "process.disk.io",
+		OTEL:    "process.disk.io",
+		Unit:    "By",
+		Type:    InstrumentCounter,
+	})
 	GoRuntimeMemoryLimit = metric(Name{
 		Section: "go.memory.limit",
 		OTEL:    "go.memory.limit",

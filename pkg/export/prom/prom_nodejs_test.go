@@ -42,7 +42,7 @@ func newNodejsTestReporter(t *testing.T, registry *testutil.PrometheusServer) *m
 		nil,
 		msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)),
 		nil,
-	)
+		nil)
 	require.NoError(t, err)
 	return reporter
 }

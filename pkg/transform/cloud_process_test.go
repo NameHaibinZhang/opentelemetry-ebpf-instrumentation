@@ -196,7 +196,7 @@ func ecsTargetInfoExporters(ctx context.Context, t *testing.T, events *msg.Queue
 		&prom.PrometheusConfig{
 			Port: registry.Port, Path: "/metrics", TTL: time.Minute, SpanMetricsServiceCacheSize: 10,
 			Instrumentations: []instrumentations.Instrumentation{instrumentations.InstrumentationALL},
-		}, features, selector, request.UnresolvedNames{}, spans, events, nil,
+		}, features, selector, request.UnresolvedNames{}, spans, events, nil, nil,
 	)(ctx)
 	require.NoError(t, err)
 	go promRun(ctx)

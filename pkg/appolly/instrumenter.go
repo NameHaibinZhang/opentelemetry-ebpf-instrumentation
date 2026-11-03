@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/obi/pkg/export/prom"
 	"go.opentelemetry.io/obi/pkg/filter"
 	msg2 "go.opentelemetry.io/obi/pkg/internal/helpers/msg"
+	"go.opentelemetry.io/obi/pkg/internal/procmetrics"
 	"go.opentelemetry.io/obi/pkg/internal/traces"
 	"go.opentelemetry.io/obi/pkg/obi"
 	"go.opentelemetry.io/obi/pkg/pipe/global"
@@ -260,6 +261,13 @@ func setupMetricsSubPipeline(
 
 	runtimeMetricsEnabled := runtimemetrics.EnabledFeatures(jointMetricsConfig.Features)
 
+	var procMetrics *msg.Queue[[]procmetrics.Snapshot]
+	if jointMetricsConfig.Features.Process() {
+		procMetrics = msg2.QueueFromConfig[[]procmetrics.Snapshot](config, ctxInfo.Metrics, "procMetrics")
+		swi.Add(procmetrics.ProcessCollector(metricsProcessEvents, procMetrics, procmetrics.DefaultSamplingInterval),
+			swarm.WithID("ProcessMetricsCollector"))
+	}
+
 	runtimeMetricsInput := runtimeMetrics
 	if runtimeMetrics != nil {
 		gatedRuntimeMetrics := msg2.QueueFromConfig[[]runtimemetrics.RuntimeMetricSnapshot](config, ctxInfo.Metrics, "gatedRuntimeMetrics")
@@ -270,7 +278,8 @@ func setupMetricsSubPipeline(
 
 	if jointMetricsConfig.Features.AppOrSpan() ||
 		jointMetricsConfig.Features.ServiceTopology() ||
-		runtimeMetricsEnabled.Any() {
+		runtimeMetricsEnabled.Any() ||
+		jointMetricsConfig.Features.Process() {
 		swi.Add(prom.PrometheusEndpoint(
 			ctxInfo,
 			&config.Prometheus,
@@ -280,6 +289,7 @@ func setupMetricsSubPipeline(
 			spanNameAggregatedMetrics,
 			metricsProcessEvents,
 			runtimeMetricsInput,
+			procMetrics,
 		), swarm.WithID("PrometheusEndpoint"))
 	}
 
@@ -292,6 +302,16 @@ func setupMetricsSubPipeline(
 			runtimeMetricsInput,
 			metricsProcessEvents,
 		), swarm.WithID("OTELRuntimeMetricsExport"))
+	}
+
+	if jointMetricsConfig.Features.Process() {
+		swi.Add(otel.ReportProcessMetrics(
+			ctxInfo,
+			&config.OTELMetrics,
+			jointMetricsConfig,
+			selectorCfg,
+			procMetrics,
+		), swarm.WithID("OTELProcessMetricsExport"))
 	}
 }
 

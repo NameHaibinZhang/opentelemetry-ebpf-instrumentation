@@ -1066,6 +1066,7 @@
               "network",
               "network_flow_packets",
               "network_inter_zone",
+              "process",
               "stats",
               "stats_tcp_failed_connections",
               "stats_tcp_io",

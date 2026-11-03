@@ -74,7 +74,7 @@ func TestConnectionInfoIsAnIndependentPresenceMetric(t *testing.T) {
 		promInput,
 		processEvents,
 		nil,
-	)(ctx)
+		nil)(ctx)
 	require.NoError(t, err)
 	go exporter(ctx)
 	exportModes := services.NewExportModes()
@@ -219,7 +219,7 @@ func TestAppMetrics_BodySizeFeature(t *testing.T) {
 				promInput,
 				processEvents,
 				nil,
-			)(ctx)
+				nil)(ctx)
 			require.NoError(t, err)
 
 			go exporter(ctx)
@@ -274,7 +274,7 @@ func TestAppMetrics_HTTPErrorType(t *testing.T) {
 		promInput,
 		processEvents,
 		nil,
-	)(ctx)
+		nil)(ctx)
 	require.NoError(t, err)
 
 	go exporter(ctx)
@@ -337,7 +337,7 @@ func TestAppMetrics_HTTPRouteLabels(t *testing.T) {
 		promInput,
 		processEvents,
 		nil,
-	)(ctx)
+		nil)(ctx)
 	require.NoError(t, err)
 
 	go exporter(ctx)
@@ -402,7 +402,7 @@ func TestAppMetrics_REDHistogramBucketBoundaries(t *testing.T) {
 		promInput,
 		processEvents,
 		nil,
-	)(ctx)
+		nil)(ctx)
 	require.NoError(t, err)
 
 	go exporter(ctx)
@@ -457,7 +457,7 @@ func TestAppMetrics_GenAIHistogramBucketBoundaries(t *testing.T) {
 		promInput,
 		processEvents,
 		nil,
-	)(ctx)
+		nil)(ctx)
 	require.NoError(t, err)
 
 	go exporter(ctx)
@@ -535,7 +535,7 @@ func TestAppMetricsExpiration(t *testing.T) {
 		promInput,
 		processEvents,
 		nil,
-	)(ctx)
+		nil)(ctx)
 	require.NoError(t, err)
 
 	go exporter(ctx)
@@ -1378,7 +1378,7 @@ func makePromExporter(
 		input,
 		processEvents,
 		nil,
-	)(ctx)
+		nil)(ctx)
 	require.NoError(t, err)
 
 	return exporter
@@ -1988,7 +1988,7 @@ func TestREDMetricsUnmeasuredSpanPublishesRequestSizeOnly(t *testing.T) {
 		promInput,
 		processEvents,
 		nil,
-	)(ctx)
+		nil)(ctx)
 	require.NoError(t, err)
 
 	go exporter(ctx)

@@ -69,8 +69,9 @@ const (
 	FeatureApplicationRuntime
 	FeatureEBPF
 	FeatureConnectionInfo
-	// FeatureAll preserves the legacy all-features behavior while keeping connection info opt-in.
-	FeatureAll = Features(^uint(0)) &^ FeatureConnectionInfo
+	FeatureProcess
+	// Connection info and process metrics require explicit opt-in.
+	FeatureAll = Features(^uint(0)) &^ (FeatureConnectionInfo | FeatureProcess)
 )
 
 // FeatureStats enables all stat metrics, including TCP IO.
@@ -99,6 +100,7 @@ var FeatureMapper = map[string]Features{
 	"application_span_sizes":           FeatureSpanSizes,
 	"application_service_graph":        FeatureGraph,
 	"application_runtime":              FeatureApplicationRuntime,
+	"process":                          FeatureProcess,
 	"ebpf":                             FeatureEBPF,
 	"all":                              FeatureAll,
 	"*":                                FeatureAll,
@@ -346,7 +348,7 @@ func (f Features) Empty() bool {
 }
 
 func (f Features) AnyAppO11yMetric() bool {
-	return f.any(AppO11yFeatures | FeatureApplicationRuntime | FeatureConnectionInfo)
+	return f.any(AppO11yFeatures | FeatureApplicationRuntime | FeatureConnectionInfo | FeatureProcess)
 }
 
 func (f Features) SpanMetrics() bool {
@@ -393,6 +395,10 @@ func (f Features) ServiceTopology() bool {
 
 func (f Features) AppRuntime() bool {
 	return f.any(FeatureApplicationRuntime)
+}
+
+func (f Features) Process() bool {
+	return f.any(FeatureProcess)
 }
 
 func (f Features) AppRED() bool {

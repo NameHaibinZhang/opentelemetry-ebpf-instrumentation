@@ -38,6 +38,7 @@ const (
 	GroupNetGeoIP
 	GroupStats
 	GroupStatsKube
+	GroupProcess
 )
 
 func (e *AttrGroups) Has(groups AttrGroups) bool {
@@ -259,6 +260,19 @@ func getDefinitions(
 			attr.ServiceNamespace: false,
 		},
 		extraGroupAttributes[GroupApp],
+	)
+
+	processAttributes := NewAttrReportGroup(
+		false,
+		[]*AttrReportGroup{&appAttributes},
+		map[attr.Name]Default{
+			attr.ProcessPID:            true,
+			attr.ProcessCommand:        true,
+			attr.ProcessExecutablePath: false,
+			attr.ProcessParentPID:      false,
+			attr.ProcessOwner:          false,
+		},
+		extraGroupAttributes[GroupProcess],
 	)
 
 	jvmMemoryAttributes := NewAttrReportGroup(
@@ -740,6 +754,32 @@ func getDefinitions(
 		GoRuntimeMemoryGCGoal.Section: {
 			SubGroups:  []*AttrReportGroup{&appAttributes},
 			Attributes: map[attr.Name]Default{},
+		},
+		ProcessCPUTime.Section: {
+			SubGroups: []*AttrReportGroup{&processAttributes},
+			Attributes: map[attr.Name]Default{
+				attr.CPUMode: true,
+			},
+		},
+		ProcessCPUUtilization.Section: {
+			SubGroups: []*AttrReportGroup{&processAttributes},
+			Attributes: map[attr.Name]Default{
+				attr.CPUMode: true,
+			},
+		},
+		ProcessMemoryUsage.Section: {
+			SubGroups:  []*AttrReportGroup{&processAttributes},
+			Attributes: map[attr.Name]Default{},
+		},
+		ProcessMemoryVirtual.Section: {
+			SubGroups:  []*AttrReportGroup{&processAttributes},
+			Attributes: map[attr.Name]Default{},
+		},
+		ProcessDiskIO.Section: {
+			SubGroups: []*AttrReportGroup{&processAttributes},
+			Attributes: map[attr.Name]Default{
+				attr.DiskIODirection: true,
+			},
 		},
 		GoRuntimeGoroutineCount.Section: {
 			SubGroups:  []*AttrReportGroup{&appAttributes},
