@@ -63,7 +63,7 @@ func TestNativeHistogramSchemaAppliedToExportedMetrics(t *testing.T) {
 				promInput,
 				processEvents,
 				nil,
-			)(ctx)
+				nil)(ctx)
 			require.NoError(t, err)
 			go exporter(ctx)
 

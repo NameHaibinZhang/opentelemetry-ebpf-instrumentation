@@ -32,7 +32,7 @@ func TestDotnetExceptions(t *testing.T) {
 		&attributes.SelectorConfig{SelectionCfg: attributes.Selection{
 			attributes.Resource.Section: attributes.InclusionLists{Include: []string{"service.name"}},
 		}}, request.UnresolvedNames{}, nil,
-		msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)), nil)
+		msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)), nil, nil)
 	require.NoError(t, err)
 	snapshot := runtimemetrics.RuntimeMetricSnapshot{
 		PID: 1, Generation: 1,
@@ -102,7 +102,7 @@ func TestDotnetRuntimeCurrentValuesExpirePerProcess(t *testing.T) {
 				}},
 				request.UnresolvedNames{}, nil,
 				msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)), nil,
-			)
+				nil)
 			require.NoError(t, err)
 			sample := func(current int64, collections uint64) *runtimemetrics.DotnetRuntimeMetricSnapshot {
 				return &runtimemetrics.DotnetRuntimeMetricSnapshot{
@@ -208,7 +208,7 @@ func TestDotnetRuntimeCurrentValuesAggregateProcesses(t *testing.T) {
 		}},
 		request.UnresolvedNames{}, nil,
 		msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)), nil,
-	)
+		nil)
 	require.NoError(t, err)
 	values := func(value int64) *runtimemetrics.DotnetRuntimeMetricSnapshot {
 		return &runtimemetrics.DotnetRuntimeMetricSnapshot{
@@ -363,7 +363,7 @@ func TestDotnetRuntimeCumulativeCounters(t *testing.T) {
 		}},
 		request.UnresolvedNames{}, nil,
 		msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)), nil,
-	)
+		nil)
 	require.NoError(t, err)
 	metrics := []struct {
 		name  string
@@ -506,7 +506,7 @@ func TestDotnetRuntimeCounterSnapshots(t *testing.T) {
 		nil,
 		msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)),
 		nil,
-	)
+		nil)
 	require.NoError(t, err)
 	assertCounts := func(expected [3]uint64) {
 		t.Helper()
@@ -576,7 +576,7 @@ func TestDotnetHeapMetricsLifecycle(t *testing.T) {
 				&perapp.GlobalMetricsConfig{Features: export.FeatureApplicationRuntime},
 				&attributes.SelectorConfig{SelectionCfg: attributes.Selection{
 					attributes.Resource.Section: attributes.InclusionLists{Include: []string{"service.name"}},
-				}}, request.UnresolvedNames{}, nil, msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)), nil)
+				}}, request.UnresolvedNames{}, nil, msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)), nil, nil)
 			require.NoError(t, err)
 			sample := func(base int64) *runtimemetrics.DotnetRuntimeMetricSnapshot {
 				values := &runtimemetrics.DotnetRuntimeMetricSnapshot{}

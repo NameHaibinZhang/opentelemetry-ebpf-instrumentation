@@ -299,7 +299,7 @@ func newJVMRuntimeMetricsTestReporter(t *testing.T) (*metricsReporter, prometheu
 		nil,
 		msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)),
 		nil,
-	)
+		nil)
 	require.NoError(t, err)
 	return reporter, registry
 }
@@ -343,7 +343,7 @@ func TestRuntimeMetricsReporterDropsJVMServiceWithoutRuntimeFeature(t *testing.T
 		nil,
 		msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)),
 		nil,
-	)
+		nil)
 	require.NoError(t, err)
 
 	reporter.collectRuntimeMetrics([]runtimemetrics.RuntimeMetricSnapshot{{
@@ -389,7 +389,7 @@ func TestRuntimeMetricsKeepServiceLabelsRegardlessOfDefaults(t *testing.T) {
 		nil,
 		msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)),
 		nil,
-	)
+		nil)
 	require.NoError(t, err)
 
 	reporter.collectRuntimeMetrics([]runtimemetrics.RuntimeMetricSnapshot{{

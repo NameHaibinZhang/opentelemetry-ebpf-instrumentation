@@ -588,7 +588,7 @@ func newGoRuntimeHistogramTestReporter(t *testing.T) (*metricsReporter, promethe
 		nil,
 		msg.NewQueue[exec.ProcessEvent](msg.ChannelBufferLen(1)),
 		nil,
-	)
+		nil)
 	require.NoError(t, err)
 	require.NotNil(t, reporter.goRuntimeHistograms)
 	return reporter, registry

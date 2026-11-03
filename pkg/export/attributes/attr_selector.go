@@ -78,6 +78,8 @@ func parseExtraAttrGroup(group string) (AttrGroups, error) {
 		return GroupApp, nil
 	case "k8s_app_meta":
 		return GroupAppKube, nil
+	case "process":
+		return GroupProcess, nil
 	default:
 		return UndefinedGroup, fmt.Errorf("group %s is not supported", group)
 	}
