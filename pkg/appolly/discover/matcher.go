@@ -11,6 +11,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
 
@@ -28,6 +30,8 @@ var (
 	osPidFunc            = os.Getpid
 )
 
+const dynamicCriteriaCheckInterval = 2 * time.Second
+
 // criteriaMatcherProvider filters the processes that match the discovery criteria.
 // When dynamicSelector is non-nil, only the dynamic selector is used (no config criteria),
 // and the matcher listens to the selector's RemovedNotify() channel for synthetic deletes.
@@ -38,6 +42,7 @@ func criteriaMatcherProvider(
 	configCriteria []services.Selector,
 	dynamicSelector *DynamicSelector,
 	updates *services.CriteriaUpdates,
+	dynamicCriteria *atomic.Pointer[[]services.Selector],
 ) swarm.InstanceFunc {
 	instrumenterNamespace, _ := namespaceFetcherFunc(app.PID(osPidFunc()))
 	if dynamicSelector != nil {
@@ -48,6 +53,7 @@ func criteriaMatcherProvider(
 	m := &Matcher{
 		Log:                 slog.With("component", "discover.CriteriaMatcher"),
 		Criteria:            configCriteria,
+		DynamicCriteria:     dynamicCriteria,
 		ExcludeCriteria:     ExcludingCriteria(cfg),
 		LogEnricherCriteria: LogEnricherFindingCriteria(cfg),
 		ProcessHistory:      map[app.PID]ProcessMatch{},
@@ -66,6 +72,7 @@ func criteriaMatcherProvider(
 type Matcher struct {
 	Log                 *slog.Logger
 	Criteria            []services.Selector
+	DynamicCriteria     *atomic.Pointer[[]services.Selector]
 	ExcludeCriteria     []services.Selector
 	LogEnricherCriteria []services.Selector
 	// ProcessHistory keeps track of the processes that have been already matched and submitted for
@@ -81,6 +88,23 @@ type Matcher struct {
 	// samplerConfig is the global sampler when criteria updates can replace it. Every match
 	// carries it, so a refresh can replace it per process instead of in each of its consumers.
 	samplerConfig *services.SamplerConfig
+
+	// tracks dynamic criteria pointer to detect hot-reload updates
+	lastDynamicSnapshot *[]services.Selector
+}
+
+func (m *Matcher) allCriteria() []services.Selector {
+	if m.DynamicCriteria == nil {
+		return m.Criteria
+	}
+	p := m.DynamicCriteria.Load()
+	if p == nil || len(*p) == 0 {
+		return m.Criteria
+	}
+	all := make([]services.Selector, 0, len(m.Criteria)+len(*p))
+	all = append(all, m.Criteria...)
+	all = append(all, *p...)
+	return all
 }
 
 // ProcessMatch matches a found process with the first selection criteria it fulfilled.
@@ -111,12 +135,24 @@ func (m *Matcher) Run(ctx context.Context) {
 		m.samplerConfig = m.CriteriaUpdates.Sampler()
 	}
 
+	var dynamicCriteriaChecks <-chan time.Time
+	if m.DynamicCriteria != nil {
+		ticker := time.NewTicker(dynamicCriteriaCheckInterval)
+		defer ticker.Stop()
+		dynamicCriteriaChecks = ticker.C
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case update := <-updates:
 			m.CriteriaUpdates.Complete(update, m.refresh(ctx, update))
+		case <-dynamicCriteriaChecks:
+			// Detach removed services even if no new process events arrive.
+			if evictions := m.evictStaleHistory(); len(evictions) > 0 {
+				m.Output.SendCtx(ctx, evictions)
+			}
 		case events, ok := <-m.Input:
 			if !ok {
 				return
@@ -132,7 +168,10 @@ func (m *Matcher) Run(ctx context.Context) {
 }
 
 func (m *Matcher) filter(events []Event[ProcessAttrs]) []Event[ProcessMatch] {
-	var matches []Event[ProcessMatch]
+	// Check if any previously matched processes no longer match current criteria.
+	// This handles the case where criteria are removed from ConfigMap hot-reload.
+	matches := m.evictStaleHistory()
+
 	for _, ev := range events {
 		if ev.Type == EventDeleted || ev.Type == EventExecutableReplaced {
 			delete(m.observed, ev.Obj.pid)
@@ -150,12 +189,34 @@ func (m *Matcher) filter(events []Event[ProcessAttrs]) []Event[ProcessMatch] {
 				observed.attrs, observed.process = ev.Obj, proc
 				m.observed[ev.Obj.pid] = observed
 			}
-			if ev, ok := m.filterCreated(ev.Obj, m.Criteria); ok {
+			if ev, ok := m.filterCreated(ev.Obj, m.allCriteria()); ok {
 				matches = append(matches, ev)
 			}
 		}
 	}
 	return matches
+}
+
+// evictStaleHistory detaches all matched processes after the dynamic criteria changed,
+// so they are re-matched against the new criteria on the next rescan.
+func (m *Matcher) evictStaleHistory() []Event[ProcessMatch] {
+	if m.DynamicCriteria == nil {
+		return nil
+	}
+	current := m.DynamicCriteria.Load()
+	if current == m.lastDynamicSnapshot {
+		return nil
+	}
+	m.lastDynamicSnapshot = current
+
+	var evictions []Event[ProcessMatch]
+	for pid, procMatch := range m.ProcessHistory {
+		m.Log.Info("criteria changed, detaching process", "pid", pid, "comm", procMatch.Process.ExePath)
+		if ev, ok := m.filterDeleted(ProcessAttrs{pid: pid}); ok {
+			evictions = append(evictions, ev)
+		}
+	}
+	return evictions
 }
 
 func (m *Matcher) alreadyMatched(pid app.PID) bool {

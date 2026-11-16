@@ -38,6 +38,7 @@ GenAI attributes OBI emits that are not part of upstream semconv.
 | `gen_ai.metadata` | string | development | Provider-specific request/response metadata captured on GenAI spans, JSON-encoded. | {"conversation_id":"conv_abc123"} |
 | `gen_ai.request.embedding.input_count` | int | development | Number of inputs submitted to a GenAI embedding request. |  |
 | `gen_ai.rerank.top_n` | int | development | Number of top results requested from a GenAI rerank operation. |  |
+| `gen_ai.span.kind` | string | development | Coarse classification of the GenAI span, derived from `gen_ai.operation.name` (LLM / EMBEDDING / TOOL / RETRIEVER / RERANKER). | LLM; EMBEDDING |
 
 ## `registry.obi.gpu`
 
@@ -188,6 +189,14 @@ Attributes carried on OBI request phase spans.
 | Attribute | Type | Stability | Description | Examples |
 | --- | --- | --- | --- | --- |
 | `obi.request.phase` | enum | development | Phase of a request represented by an OBI child span. | queue; processing |
+
+## `registry.obi.traces_resource`
+
+Resource attributes OBI's trace exporter sets on the exported `ResourceSpans` in addition to the service and infrastructure attributes shared with the metrics pipeline.
+
+| Attribute | Type | Stability | Description | Examples |
+| --- | --- | --- | --- | --- |
+| `acs.arms.service.feature` | string | development | Alibaba Cloud ARMS service-feature tag, carried as a resource attribute on GenAI application signals so ARMS can classify the service. OBI fork sets it to `genai_app`. | genai_app |
 
 ## `x.obi.db`
 
